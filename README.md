@@ -339,5 +339,5 @@ python yolo/inference_yolo.py \
 
 ## License
 
-[Thêm license của bạn ở đây]
+Nếu bạn có thắc mắc vui lòng gửi gmail cho mình: nguyenphanhongduy658@gmail.com
 
