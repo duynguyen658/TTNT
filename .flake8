@@ -1,0 +1,46 @@
+[flake8]
+# Maximum line length
+max-line-length = 100
+
+# Exclude directories
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    .env,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    .mypy_cache,
+    runs,
+    models/*.pt,
+    data
+
+# Ignore specific errors
+# E203: whitespace before ':' (conflicts with Black)
+# E501: line too long (handled by Black)
+# W503: line break before binary operator (conflicts with Black)
+# E226: missing whitespace around arithmetic operator (conflicts with Black in some cases)
+# E722: bare except (sometimes needed for error handling)
+# F401: imported but unused (can be useful for future use)
+# F541: f-string is missing placeholders (sometimes used for consistency)
+# D*: docstring errors (not critical for this project)
+# C901: too complex (training/validation functions can be complex)
+ignore = E203, E501, W503, E226, E722, F401, F541, C901, D100, D101, D102, D103, D104, D105, D106, D107, D200, D201, D202, D203, D204, D205, D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D410, D411, D412, D413, D414, D415, D416, D417
+
+# Maximum complexity (increase to allow more complex functions like training scripts)
+max-complexity = 30
+
+# Per-file ignores
+per-file-ignores =
+    __init__.py:F401
+    */migrations/*:E501
+
+# Show source
+show-source = True
+
+# Statistics
+statistics = True

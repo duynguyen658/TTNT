@@ -15,4 +15,3 @@ scikit-learn>=1.3.0
 matplotlib>=3.7.0
 tensorflow>=2.13.0
 ultralytics>=8.0.0
-

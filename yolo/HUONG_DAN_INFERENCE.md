@@ -19,6 +19,7 @@ python test_model.py
 ```
 
 Script này sẽ:
+
 - Tự động tìm model trong `runs/detect/plant_disease_detection/weights/best.pt`
 - Test trên 3 ảnh đầu tiên trong test set
 - Hiển thị kết quả với bounding boxes
@@ -88,6 +89,7 @@ python inference_yolo.py \
 ### Ảnh Kết Quả
 
 Ảnh sẽ được vẽ với:
+
 - Bounding boxes (hộp giới hạn)
 - Class names
 - Confidence scores
@@ -166,21 +168,25 @@ inference.evaluate_on_test_set("data/test/images")
 ## Troubleshooting
 
 ### Lỗi: "Model not found"
+
 ```bash
 # Kiểm tra đường dẫn model
 ls runs/detect/plant_disease_detection/weights/
 ```
 
 ### Lỗi: "No module named 'cv2'"
+
 ```bash
 pip install opencv-python
 ```
 
 ### Lỗi: "Image not found"
+
 - Kiểm tra đường dẫn ảnh
 - Đảm bảo file tồn tại
 
 ### Kết quả không hiển thị
+
 - Thử giảm `--conf` threshold
 - Kiểm tra ảnh có objects không
 - Xem log để biết có detections không
@@ -213,6 +219,7 @@ python inference_yolo.py \
 ## So Sánh Với Metrics Từ Training
 
 Sau khi train, bạn có thể xem metrics trong:
+
 - `runs/detect/plant_disease_detection/results.csv`
 - `runs/detect/plant_disease_detection/results.png`
 - `runs/detect/plant_disease_detection/confusion_matrix.png`

@@ -1,6 +1,7 @@
 """
 Multi-Agent System - Agents Package
 """
+
 from agents.agent1_user_collector import UserInformationCollector
 from agents.agent2_image_diagnosis import ImageDiagnosisAgent
 from agents.agent3_dataset_diagnosis import DatasetDiagnosisAgent
@@ -12,6 +13,5 @@ __all__ = [
     "ImageDiagnosisAgent",
     "DatasetDiagnosisAgent",
     "SocialMediaSearchAgent",
-    "FinalSynthesisAgent"
+    "FinalSynthesisAgent",
 ]
-

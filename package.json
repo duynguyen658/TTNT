@@ -1,0 +1,24 @@
+{
+  "name": "ttnt2-plant-disease-detection",
+  "version": "1.0.0",
+  "description": "AI Multi-Agent System for Plant Disease Detection and Consultation",
+  "scripts": {
+    "lint:js": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:js:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format:js": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,scss,html,md,yaml,yml}\"",
+    "format:js:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,scss,html,md,yaml,yml}\"",
+    "lint": "npm run lint:js",
+    "format": "npm run format:js",
+    "check": "npm run lint:js && npm run format:js:check"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "prettier": "^3.2.5"
+  },
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  }
+}

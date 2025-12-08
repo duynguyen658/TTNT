@@ -1,0 +1,88 @@
+# Pre-commit hooks configuration
+# Install: pip install pre-commit
+# Setup: pre-commit install
+# Run: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: end-of-file-fixer
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: check-yaml
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: check-added-large-files
+        args: ['--maxkb=10000']
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: check-json
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: check-toml
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: check-merge-conflict
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: debug-statements
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+      - id: mixed-line-ending
+        exclude: ^(node_modules/|\.cache/|runs/|data/|models/.*\.pt)
+
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+        args: ['--line-length=100']
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ['--profile', 'black', '--line-length=100']
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args:
+          [
+            '--max-line-length=100',
+            '--extend-ignore=E203,W503,E226,E722,F401,F541,C901,D100,D101,D102,D103,D104,D105,D106,D107,D200,D201,D202,D203,D204,D205,D400,D401,D402,D403,D404,D405,D406,D407,D408,D409,D410,D411,D412,D413,D414,D415,D416,D417',
+            '--max-complexity=30',
+            '--exclude=runs,models/*.pt,data,*.egg-info,build,dist',
+          ]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, json, css, scss, html, yaml, markdown]
+        exclude: |
+          (?x)^(
+            .*\.min\.(js|css)|
+            node_modules/|
+            \.cache/|
+            dist/|
+            build/|
+            runs/|
+            data/|
+            models/.*\.pt
+          )$
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v8.56.0
+    hooks:
+      - id: eslint
+        types: [file]
+        types_or: [javascript, jsx, ts, tsx]
+        exclude: |
+          (?x)^(
+            .*\.min\.js|
+            node_modules/|
+            dist/|
+            build/
+          )$
+        additional_dependencies:
+          - eslint@8.56.0
+          - eslint-config-prettier@9.1.0
+          - eslint-plugin-prettier@5.1.3

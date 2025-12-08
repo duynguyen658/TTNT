@@ -51,10 +51,12 @@ class_id x_center y_center width height
 ```
 
 Tất cả giá trị được normalize về [0, 1]:
+
 - `x_center`, `y_center`: Tọa độ tâm của bounding box (tính theo chiều rộng/cao của ảnh)
 - `width`, `height`: Chiều rộng và cao của bounding box (tính theo chiều rộng/cao của ảnh)
 
 Ví dụ:
+
 ```
 0 0.5 0.5 0.3 0.4
 1 0.2 0.3 0.15 0.2
@@ -66,10 +68,10 @@ Ví dụ:
 path: /path/to/dataset
 train: train/images
 val: valid/images
-test: test/images  # optional
+test: test/images # optional
 
-nc: 30  # số lượng classes
-names: ['Apple Scab Leaf', 'Apple leaf', 'Apple rust leaf', ...]  # tên các classes
+nc: 30 # số lượng classes
+names: ['Apple Scab Leaf', 'Apple leaf', 'Apple rust leaf', ...] # tên các classes
 ```
 
 ## Cách Sử Dụng
@@ -93,6 +95,7 @@ python train_yolo_detection.py --data data/data.yaml --model-size m --epochs 150
 ```
 
 Các kích thước model:
+
 - `n` (nano): Nhỏ nhất, nhanh nhất (~6MB)
 - `s` (small): Cân bằng, khuyến nghị (~22MB)
 - `m` (medium): Tốt hơn (~52MB)
@@ -235,7 +238,7 @@ convert_voc(
 
 1. **Dataset size**: Cần ít nhất vài trăm ảnh với annotations để có kết quả tốt
 2. **GPU**: Training trên GPU nhanh hơn nhiều so với CPU (10-50x)
-3. **Memory**: 
+3. **Memory**:
    - Model `n`: ~2GB VRAM
    - Model `s`: ~4GB VRAM
    - Model `m`: ~6GB VRAM
@@ -247,26 +250,31 @@ convert_voc(
 ## Troubleshooting
 
 ### Lỗi: "YOLO not installed"
+
 ```bash
 pip install ultralytics
 ```
 
 ### Lỗi: "CUDA out of memory"
+
 - Giảm `--batch` size (ví dụ: `--batch 8` hoặc `--batch 4`)
 - Giảm `--imgsz` (ví dụ: `--imgsz 416`)
 - Dùng model nhỏ hơn (`--model-size n`)
 - Hoặc train trên CPU (`--device cpu`)
 
 ### Lỗi: "Dataset not found" hoặc "data.yaml not found"
+
 - Kiểm tra đường dẫn dataset
 - Đảm bảo cấu trúc thư mục đúng format
 - Kiểm tra file data.yaml có đúng format không
 
 ### Lỗi: "No labels found"
+
 - Đảm bảo có thư mục `labels/` với file `.txt`
 - Kiểm tra format file label (class_id x y w h, normalized)
 
 ### Lỗi: "Mismatch number of images and labels"
+
 - Đảm bảo mỗi ảnh có file label tương ứng
 - Tên file phải khớp (ví dụ: `img1.jpg` và `img1.txt`)
 
@@ -297,14 +305,14 @@ print(f'Bounding box: {result[\"all\"][0][\"bbox\"]}')
 
 ## So Sánh Classification vs Detection
 
-| Feature | Classification | Detection |
-|---------|---------------|-----------|
-| Output | Class name | Class name + Bounding box |
-| Dataset | Chỉ cần ảnh theo thư mục | Cần ảnh + annotations (bbox) |
-| Use case | Nhận dạng toàn bộ ảnh | Phát hiện và định vị object |
-| Accuracy | Cao cho toàn ảnh | Cao cho từng object |
-| Speed | Nhanh hơn | Chậm hơn một chút |
-| Model size | Nhỏ hơn | Lớn hơn |
+| Feature    | Classification           | Detection                    |
+| ---------- | ------------------------ | ---------------------------- |
+| Output     | Class name               | Class name + Bounding box    |
+| Dataset    | Chỉ cần ảnh theo thư mục | Cần ảnh + annotations (bbox) |
+| Use case   | Nhận dạng toàn bộ ảnh    | Phát hiện và định vị object  |
+| Accuracy   | Cao cho toàn ảnh         | Cao cho từng object          |
+| Speed      | Nhanh hơn                | Chậm hơn một chút            |
+| Model size | Nhỏ hơn                  | Lớn hơn                      |
 
 ## Tài Liệu Tham Khảo
 

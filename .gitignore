@@ -20,6 +20,19 @@ wheels/
 .installed.cfg
 *.egg
 
+# Code Quality
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Node modules and cache
+node_modules/
+.cache/
+*.cache
+
 # Virtual Environment
 venv/
 ENV/
@@ -45,4 +58,3 @@ output/*
 # OS
 .DS_Store
 Thumbs.db
-
