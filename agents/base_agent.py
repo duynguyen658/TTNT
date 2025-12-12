@@ -6,7 +6,21 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 import config
-from openai import OpenAI
+
+# Import LLM clients
+try:
+    from openai import OpenAI
+
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+try:
+    from groq import Groq
+
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
 
 
 class BaseAgent(ABC):
@@ -17,7 +31,28 @@ class BaseAgent(ABC):
         self.name = agent_config.get("name", agent_id)
         self.model = agent_config.get("model", "gpt-4")
         self.temperature = agent_config.get("temperature", 0.5)
-        self.client = OpenAI(api_key=config.OPENAI_API_KEY) if config.OPENAI_API_KEY else None
+
+        # Khởi tạo client dựa trên provider
+        self.client = None
+        self.provider = config.LLM_PROVIDER.lower()
+
+        if self.provider == "groq" and GROQ_AVAILABLE:
+            if config.GROQ_API_KEY:
+                self.client = Groq(api_key=config.GROQ_API_KEY)
+            else:
+                print(f"⚠️  {agent_id}: GROQ_API_KEY not set, LLM features will be disabled")
+        elif self.provider == "openai" and OPENAI_AVAILABLE:
+            if config.OPENAI_API_KEY:
+                self.client = OpenAI(api_key=config.OPENAI_API_KEY)
+            else:
+                print(f"⚠️  {agent_id}: OPENAI_API_KEY not set, LLM features will be disabled")
+        else:
+            if self.provider == "groq" and not GROQ_AVAILABLE:
+                print(f"⚠️  {agent_id}: Groq library not installed. Install with: pip install groq")
+            elif self.provider == "openai" and not OPENAI_AVAILABLE:
+                print(
+                    f"⚠️  {agent_id}: OpenAI library not installed. Install with: pip install openai"
+                )
 
     @abstractmethod
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:

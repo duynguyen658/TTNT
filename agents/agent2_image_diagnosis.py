@@ -7,19 +7,21 @@ import io
 import os
 from typing import Any, Dict, Optional
 
-import config
 from PIL import Image
 
+import config
 from agents.base_agent import BaseAgent
 
 # Import YOLO model nhận dạng bệnh cây
 try:
-    from models.yolo_disease_model import YOLOModelLoader
+    from yolo.inference_yolo import YOLOInference
 
     MODEL_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     MODEL_AVAILABLE = False
-    print("⚠️  YOLO model module chưa được import. Sẽ chỉ sử dụng Vision API.")
+    print(f"⚠️  YOLO model module chưa được import: {e}")
+    print("👉 Cài đặt: pip install ultralytics opencv-python pillow")
+    print("⚠️  Sẽ chỉ sử dụng Vision API.")
 
 
 class ImageDiagnosisAgent(BaseAgent):
@@ -36,23 +38,32 @@ class ImageDiagnosisAgent(BaseAgent):
             return
 
         # Thử load custom YOLO model trước
-        model_path = getattr(config, "YOLO_MODEL_PATH", "models/plant_disease_yolo.pt")
-        if os.path.exists(model_path):
-            try:
-                self.disease_model = YOLOModelLoader.load_model(model_path)
-                if self.disease_model:
-                    print(f"✅ Đã load YOLO model nhận dạng bệnh cây từ: {model_path}")
-                    return
-            except Exception as e:
-                print(f"⚠️  Không thể load YOLO model từ {model_path}: {e}")
+        model_path = getattr(config, "YOLO_MODEL_PATH", "models/yolo_detection_s.pt")
 
-        # Nếu không có custom model, load pretrained YOLO
+        # Kiểm tra đường dẫn tuyệt đối và tương đối
+        if not os.path.exists(model_path):
+            # Thử đường dẫn tuyệt đối từ config
+            abs_path = os.path.abspath(model_path)
+            if os.path.exists(abs_path):
+                model_path = abs_path
+            else:
+                # Thử trong thư mục models/
+                alt_path = os.path.join("models", os.path.basename(model_path))
+                if os.path.exists(alt_path):
+                    model_path = alt_path
+                else:
+                    print(f"⚠️  Không tìm thấy YOLO model tại: {model_path}")
+                    print(f"⚠️  Đã thử: {abs_path}, {alt_path}")
+                    return
+
         try:
-            self.disease_model = YOLOModelLoader.create_new_model()
-            if self.disease_model:
-                print(f"✅ Đã load YOLO pretrained model (yolov8n)")
+            self.disease_model = YOLOInference(model_path, conf_threshold=0.25)
+            print(f"✅ Đã load YOLO model nhận dạng bệnh cây từ: {model_path}")
         except Exception as e:
-            print(f"⚠️  Không thể load YOLO pretrained model: {e}")
+            print(f"⚠️  Không thể load YOLO model từ {model_path}: {e}")
+            import traceback
+
+            traceback.print_exc()
 
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -109,11 +120,52 @@ class ImageDiagnosisAgent(BaseAgent):
         model_result = None
         if self.disease_model:
             try:
-                model_result = self.disease_model.predict(image)
-                if model_result.get("error"):
-                    model_result = None
+                # Lưu image tạm để YOLO xử lý
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    image.save(tmp.name, format="JPEG")
+                    temp_path = tmp.name
+
+                # Chạy YOLO prediction
+                yolo_result = self.disease_model.predict_single(temp_path, show=False)
+
+                # Xóa file tạm
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+
+                # Chuyển đổi kết quả YOLO sang format mong muốn
+                if yolo_result and yolo_result.get("num_detections", 0) > 0:
+                    top_detection = yolo_result.get("top_detection")
+                    if top_detection:
+                        model_result = {
+                            "disease": top_detection.get("class_name", "Unknown"),
+                            "confidence": top_detection.get("confidence", 0.0),
+                            "top_predictions": yolo_result.get("detections", [])[:5],
+                            "num_detections": yolo_result.get("num_detections", 0),
+                        }
+                    else:
+                        model_result = {
+                            "disease": "No disease detected",
+                            "confidence": 0.0,
+                            "top_predictions": [],
+                            "num_detections": 0,
+                        }
+                else:
+                    model_result = {
+                        "disease": "No disease detected",
+                        "confidence": 0.0,
+                        "top_predictions": [],
+                        "num_detections": 0,
+                    }
+
             except Exception as e:
-                print(f"⚠️  Lỗi khi dùng model: {e}")
+                print(f"⚠️  Lỗi khi dùng YOLO model: {e}")
+                import traceback
+
+                traceback.print_exc()
                 model_result = None
 
         # Sử dụng Vision API nếu có
