@@ -18,13 +18,12 @@ from orchestrator import AgentOrchestrator
 app = FastAPI(title="Plant Disease AI API", version="1.0.0")
 
 # CORS middleware để cho phép frontend gọi
+# Cho phép tất cả origins trong development, hoặc set CORS_ORIGINS env var trong production
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://*.vercel.app",
-        "https://*.vercel.sh",
-    ],  # Trong production, chỉ định domain cụ thể
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

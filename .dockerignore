@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment files (giữ lại .env.example nếu có)
+.env
+.env.local
+.env.*.local
+
+# Node modules (frontend)
+node_modules/
+FE/node_modules/
+FE/ai-chatbot-main/node_modules/
+
+# Frontend build files
+FE/.next/
+FE/ai-chatbot-main/.next/
+FE/ai-chatbot-main/out/
+FE/ai-chatbot-main/dist/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (giữ lại README.md)
+*.md
+!README.md
+docs/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large data files (không cần trong Docker image)
+# Giữ lại models/ vì cần YOLO model
+data/train/
+data/valid/
+data/test/
+runs/
+yolo/results/
+
+# Cache
+.cache/
+*.cache
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Railway specific
+.railway/
