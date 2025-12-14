@@ -13,15 +13,21 @@ export async function middleware(request: NextRequest) {
     return new Response('pong', { status: 200 });
   }
 
-  if (pathname.startsWith('/api/auth')) {
+  // Allow API routes that don't require auth
+  if (
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/plant-ai') ||
+    pathname.startsWith('/api/test')
+  ) {
     return NextResponse.next();
   }
 
-  // Allow /api/plant-ai to pass through without auth (internal API route)
-  if (pathname.startsWith('/api/plant-ai')) {
+  // For other API routes, let them handle auth themselves (don't redirect)
+  if (pathname.startsWith('/api/')) {
     return NextResponse.next();
   }
 
+  // For non-API routes, check auth and redirect if needed
   const token = await getToken({
     req: request,
     secret: process.env.AUTH_SECRET,
