@@ -1,6 +1,7 @@
 # API Server dependencies
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6  # Required for FastAPI form data handling
 
 # LLM Providers
 openai>=1.0.0
@@ -10,8 +11,8 @@ langchain-openai>=0.0.5
 
 # Image Processing
 pillow>=10.0.0
-opencv-python>=4.8.0
-numpy>=1.24.0
+opencv-python>=4.8.0  # Note: May show warning about NumPy 2.x, but works with NumPy 1.x
+numpy>=1.24.0,<2.0.0  # Limit to NumPy 1.x for compatibility with pandas and other packages
 
 # Data Processing
 pandas>=2.0.0
