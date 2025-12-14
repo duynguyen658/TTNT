@@ -84,7 +84,18 @@ export async function POST(request: Request) {
   try {
     const json = await request.json();
     requestBody = postRequestBodySchema.parse(json);
-  } catch (_) {
+  } catch (error) {
+    console.error('Request validation error:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+    }
+    // Log request body for debugging (only in development)
+    try {
+      const body = await request.clone().json();
+      console.error('Request body received:', JSON.stringify(body, null, 2));
+    } catch (e) {
+      console.error('Could not parse request body for logging');
+    }
     return new ChatSDKError('bad_request:api').toResponse();
   }
 

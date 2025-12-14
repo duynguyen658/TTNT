@@ -9,9 +9,10 @@ import tempfile
 from typing import Any, Dict, Optional
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from orchestrator import AgentOrchestrator
 
@@ -60,12 +61,14 @@ async def health():
         return {"status": "unhealthy", "error": str(e)}
 
 
+class ChatRequest(BaseModel):
+    user_query: str
+    user_context: Optional[Dict[str, Any]] = None
+    image_data: Optional[str] = None  # base64 encoded image
+
+
 @app.post("/api/chat")
-async def chat_endpoint(
-    user_query: str,
-    user_context: Optional[Dict[str, Any]] = None,
-    image_data: Optional[str] = None,  # base64 encoded image
-):
+async def chat_endpoint(request: ChatRequest):
     """
     Endpoint chính để xử lý chat với AI
 
@@ -79,10 +82,10 @@ async def chat_endpoint(
 
         # Xử lý image nếu có
         image_path = None
-        if image_data:
+        if request.image_data:
             try:
                 # Decode base64 và lưu file tạm
-                image_bytes = base64.b64decode(image_data)
+                image_bytes = base64.b64decode(request.image_data)
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                     tmp.write(image_bytes)
                     image_path = tmp.name
@@ -91,8 +94,8 @@ async def chat_endpoint(
 
         # Chuẩn bị input
         user_input: Dict[str, Any] = {
-            "user_query": user_query,
-            "user_context": user_context or {},
+            "user_query": request.user_query,
+            "user_context": request.user_context or {},
         }
 
         if image_path:
