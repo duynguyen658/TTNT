@@ -1,6 +1,7 @@
 """
 Configuration file cho Multi-Agent System
 """
+
 import os
 from typing import Any, Dict
 
@@ -27,23 +28,23 @@ AGENT_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "agent2": {
         "name": "Image Diagnosis Agent",
-        "model": "gpt-4-vision-preview"
-        if LLM_PROVIDER == "openai"
-        else "llama-3.1-70b-versatile",  # Groq không có vision, dùng text model
+        "model": (
+            "gpt-4-vision-preview" if LLM_PROVIDER == "openai" else "llama-3.1-70b-versatile"
+        ),  # Groq không có vision, dùng text model
         "temperature": 0.2,
         "description": "Chẩn đoán bệnh cây trồng dựa trên hình ảnh",
     },
     "agent3": {
-        "name": "Dataset Diagnosis Agent",
+        "name": "Diagnosis Validator Agent",
         "model": "gpt-4" if LLM_PROVIDER == "openai" else "llama-3.3-70b-versatile",
         "temperature": 0.3,
-        "description": "Phân tích dataset về bệnh cây trồng",
+        "description": "Thẩm định chẩn đoán & xác định tác nhân gây bệnh",
     },
     "agent4": {
-        "name": "Social Media Search Agent",
+        "name": "Knowledge & Experience Agent",
         "model": "gpt-4" if LLM_PROVIDER == "openai" else "llama-3.3-70b-versatile",
         "temperature": 0.5,
-        "description": "Tìm kiếm thông tin từ mạng xã hội",
+        "description": "Bổ sung kiến thức nông học & kinh nghiệm thực tế",
     },
     "agent5": {
         "name": "Final Synthesis Agent",
