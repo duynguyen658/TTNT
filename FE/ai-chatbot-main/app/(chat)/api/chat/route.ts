@@ -35,7 +35,7 @@ import {
   saveMessages,
   updateChatLastContextById,
 } from '@/lib/db/queries';
-import type { DBMessage } from '@/lib/db/schema';
+import type { Chat, DBMessage } from '@/lib/db/schema';
 import { ChatSDKError } from '@/lib/errors';
 import type { ChatMessage } from '@/lib/types';
 import type { AppUsage } from '@/lib/usage';
@@ -120,36 +120,60 @@ export async function POST(request: Request) {
 
     const userType: UserType = session.user.type;
 
-    const messageCount = await getMessageCountByUserId({
-      id: session.user.id,
-      differenceInHours: 24,
-    });
+    let messageCount = 0;
+    try {
+      messageCount = await getMessageCountByUserId({
+        id: session.user.id,
+        differenceInHours: 24,
+      });
+    } catch (dbError: any) {
+      console.error('[chat] Error getting message count:', dbError);
+      // Continue if database error, don't block the request
+    }
 
     if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
       return new ChatSDKError('rate_limit:chat').toResponse();
     }
 
-    const chat = await getChatById({ id });
+    let chat: Chat | null = null;
     let messagesFromDb: DBMessage[] = [];
+    try {
+      chat = await getChatById({ id });
+    } catch (dbError: any) {
+      console.error('[chat] Error getting chat:', dbError);
+      // Continue if database error, create new chat if needed
+      chat = null;
+    }
 
     if (chat) {
       if (chat.userId !== session.user.id) {
         return new ChatSDKError('forbidden:chat').toResponse();
       }
       // Only fetch messages if chat already exists
-      messagesFromDb = await getMessagesByChatId({ id });
+      try {
+        messagesFromDb = await getMessagesByChatId({ id });
+      } catch (dbError: any) {
+        console.error('[chat] Error getting messages:', dbError);
+        // Continue with empty messages if database error
+        messagesFromDb = [];
+      }
     } else {
-      const title = await generateTitleFromUserMessage({
-        message,
-      });
+      try {
+        const title = await generateTitleFromUserMessage({
+          message,
+        });
 
-      await saveChat({
-        id,
-        userId: session.user.id,
-        title,
-        visibility: selectedVisibilityType,
-      });
-      // New chat - no need to fetch messages, it's empty
+        await saveChat({
+          id,
+          userId: session.user.id,
+          title,
+          visibility: selectedVisibilityType,
+        });
+        // New chat - no need to fetch messages, it's empty
+      } catch (dbError: any) {
+        console.error('[chat] Error saving chat:', dbError);
+        // Continue even if saveChat fails, chat will be created on first message save
+      }
     }
 
     // Không giới hạn messages - để model tự xử lý với context window lớn
@@ -169,21 +193,31 @@ export async function POST(request: Request) {
       country,
     };
 
-    await saveMessages({
-      messages: [
-        {
-          chatId: id,
-          id: message.id,
-          role: 'user',
-          parts: message.parts,
-          attachments: [],
-          createdAt: new Date(),
-        },
-      ],
-    });
+    try {
+      await saveMessages({
+        messages: [
+          {
+            chatId: id,
+            id: message.id,
+            role: 'user',
+            parts: message.parts,
+            attachments: [],
+            createdAt: new Date(),
+          },
+        ],
+      });
+    } catch (dbError: any) {
+      console.error('[chat] Error saving user message:', dbError);
+      // Continue even if saveMessages fails
+    }
 
     const streamId = generateUUID();
-    await createStreamId({ streamId, chatId: id });
+    try {
+      await createStreamId({ streamId, chatId: id });
+    } catch (dbError: any) {
+      console.error('[chat] Error creating stream ID:', dbError);
+      // Continue even if createStreamId fails
+    }
 
     let finalMergedUsage: AppUsage | undefined;
 
@@ -211,10 +245,8 @@ export async function POST(request: Request) {
           system: systemPrompt({ selectedChatModel, requestHints }),
           messages: optimizedMessages,
           stopWhen: stepCountIs(5),
-          // Tăng maxTokens để hỗ trợ context dài hơn (nếu model hỗ trợ)
-          // Grok models thường hỗ trợ context window rất lớn (128k+ tokens)
-          // Nhưng Vercel AI Gateway có thể có giới hạn riêng
-          maxTokens: undefined, // Bỏ giới hạn, để model tự quyết định
+          // Note: maxTokens không còn được hỗ trợ trong AI SDK
+          // Model sẽ tự quyết định số lượng tokens dựa trên context window
           experimental_activeTools:
             selectedChatModel === 'chat-model-reasoning'
               ? []
@@ -283,16 +315,21 @@ export async function POST(request: Request) {
       },
       generateId: generateUUID,
       onFinish: async ({ messages }) => {
-        await saveMessages({
-          messages: messages.map(currentMessage => ({
-            id: currentMessage.id,
-            role: currentMessage.role,
-            parts: currentMessage.parts,
-            createdAt: new Date(),
-            attachments: [],
-            chatId: id,
-          })),
-        });
+        try {
+          await saveMessages({
+            messages: messages.map(currentMessage => ({
+              id: currentMessage.id,
+              role: currentMessage.role,
+              parts: currentMessage.parts,
+              createdAt: new Date(),
+              attachments: [],
+              chatId: id,
+            })),
+          });
+        } catch (dbError: any) {
+          console.error('[chat] Error saving messages in onFinish:', dbError);
+          // Continue even if saveMessages fails
+        }
 
         if (finalMergedUsage) {
           try {
@@ -305,7 +342,12 @@ export async function POST(request: Request) {
           }
         }
       },
-      onError: () => {
+      onError: error => {
+        console.error('[chat] Error in streamText:', error);
+        // Return user-friendly error message
+        if (error instanceof Error) {
+          return `Đã xảy ra lỗi: ${error.message}`;
+        }
         return 'Oops, an error occurred!';
       },
     });
@@ -336,7 +378,44 @@ export async function POST(request: Request) {
       return new ChatSDKError('bad_request:activate_gateway').toResponse();
     }
 
-    console.error('Unhandled error in chat API:', error, { vercelId });
+    // Log detailed error information
+    console.error('[chat] Unhandled error in chat API:', error, { vercelId });
+    if (error instanceof Error) {
+      console.error('[chat] Error message:', error.message);
+      console.error('[chat] Error stack:', error.stack);
+      console.error('[chat] Error name:', error.name);
+    }
+
+    // Check if it's a database error
+    const isDatabaseError =
+      error instanceof Error &&
+      (error.message?.includes('database') ||
+        error.message?.includes('POSTGRES') ||
+        error.message?.includes('connection') ||
+        error.message?.includes('timeout'));
+
+    // Check if it's a tool execution error (plantDiagnosis, etc.)
+    const isToolError =
+      error instanceof Error &&
+      (error.message?.includes('plantDiagnosis') ||
+        error.message?.includes('tool') ||
+        error.message?.includes('backend'));
+
+    // Return more specific error based on error type
+    if (isDatabaseError) {
+      console.error('[chat] Database error detected, but continuing...');
+      // Don't return error, let it continue (database errors are non-critical)
+      // Return a generic error instead
+      return new ChatSDKError('bad_request:api').toResponse();
+    }
+
+    if (isToolError) {
+      // Tool errors should be handled by the tool itself
+      // But if it reaches here, return a more helpful error
+      return new ChatSDKError('bad_request:api').toResponse();
+    }
+
+    // For other errors, return offline:chat
     return new ChatSDKError('offline:chat').toResponse();
   }
 }

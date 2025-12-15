@@ -226,6 +226,73 @@ const PurePreviewMessage = ({
               );
             }
 
+            if (type === 'tool-plantDiagnosis') {
+              const { toolCallId, state } = part;
+              const output = part.output as any; // Type assertion vì output có thể có error hoặc success data
+
+              return (
+                <Tool defaultOpen={true} key={toolCallId}>
+                  <ToolHeader state={state} type="tool-plantDiagnosis" />
+                  <ToolContent>
+                    {state === 'input-available' && <ToolInput input={part.input} />}
+                    {state === 'output-available' && (
+                      <ToolOutput
+                        errorText={output?.error ? String(output.error) : undefined}
+                        output={
+                          output?.error ? (
+                            <div className="space-y-2">
+                              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 dark:bg-red-950/50 dark:text-red-400">
+                                <p className="font-semibold">⚠️ Lỗi kết nối backend</p>
+                                <p className="mt-2 whitespace-pre-wrap text-sm">
+                                  {String(output.error)}
+                                </p>
+                              </div>
+                              {output.recommendations && (
+                                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300">
+                                  <p className="font-semibold text-xs">Gợi ý:</p>
+                                  <ul className="mt-1 list-disc list-inside text-xs">
+                                    {Array.isArray(output.recommendations) &&
+                                      output.recommendations.map((rec: string, i: number) => (
+                                        <li key={i}>{rec}</li>
+                                      ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-3 rounded-lg border bg-muted/50 p-4">
+                              {output?.diagnosis && (
+                                <div>
+                                  <p className="font-semibold text-sm">Chẩn đoán:</p>
+                                  <p className="mt-1 text-sm">{output.diagnosis}</p>
+                                </div>
+                              )}
+                              {output?.confidence !== undefined && (
+                                <div>
+                                  <p className="font-semibold text-sm">Độ tin cậy:</p>
+                                  <p className="mt-1 text-sm">
+                                    {(output.confidence * 100).toFixed(1)}%
+                                  </p>
+                                </div>
+                              )}
+                              {output?.summary && (
+                                <div>
+                                  <p className="font-semibold text-sm">Tư vấn:</p>
+                                  <p className="mt-1 whitespace-pre-wrap text-sm">
+                                    {output.summary}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+                      />
+                    )}
+                  </ToolContent>
+                </Tool>
+              );
+            }
+
             return null;
           })}
 

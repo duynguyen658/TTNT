@@ -25,7 +25,7 @@ app = FastAPI(title="Plant Disease AI API", version="1.0.0")
 
 # CORS middleware để cho phép frontend gọi
 # Cho phép tất cả origins trong development, hoặc set CORS_ORIGINS env var trong production
-# Hỗ trợ wildcard: https://*.vercel.app, https://*.ngrok-free.app
+# Hỗ trợ wildcard: https://*.vercel.app, https://*.trycloudflare.com, https://*.yourdomain.com
 cors_origins_env = os.getenv("CORS_ORIGINS", "")
 if cors_origins_env:
     cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
