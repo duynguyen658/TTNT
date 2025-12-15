@@ -120,21 +120,38 @@ class ImageDiagnosisAgent(BaseAgent):
         model_result = None
         if self.disease_model:
             try:
-                # Lưu image tạm để YOLO xử lý
-                import tempfile
+                # Tạo folder image nếu chưa có
+                import os
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                    image.save(tmp.name, format="JPEG")
-                    temp_path = tmp.name
+                image_folder = "image"
+                os.makedirs(image_folder, exist_ok=True)
 
-                # Chạy YOLO prediction
-                yolo_result = self.disease_model.predict_single(temp_path, show=False)
+                # Tạo path để lưu ảnh đã vẽ bounding box (KHÔNG lưu ảnh gốc)
+                import time
 
-                # Xóa file tạm
+                timestamp = int(time.time() * 1000)  # milliseconds
+                annotated_filename = f"annotated_{timestamp}.jpg"
+                annotated_path = os.path.join(image_folder, annotated_filename)
+
+                # Lưu ảnh tạm để YOLO xử lý (sẽ bị xóa sau)
+                temp_filename = f"temp_{timestamp}.jpg"
+                temp_path = os.path.join(image_folder, temp_filename)
+                image.save(temp_path, format="JPEG")
+                print(f"🔍 Đang phân tích ảnh...")
+
+                # Chạy YOLO prediction và lưu ảnh đã vẽ bounding box
+                yolo_result = self.disease_model.predict_single(
+                    temp_path, save_path=annotated_path, show=False  # Lưu ảnh đã vẽ bounding box
+                )
+
+                # Xóa ảnh tạm ngay sau khi xử lý xong
                 try:
-                    os.unlink(temp_path)
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
                 except:
                     pass
+
+                print(f"✅ Đã lưu ảnh đã xử lý (có bounding box): {annotated_path}")
 
                 # Chuyển đổi kết quả YOLO sang format mong muốn
                 if yolo_result and yolo_result.get("num_detections", 0) > 0:
@@ -168,10 +185,13 @@ class ImageDiagnosisAgent(BaseAgent):
                 traceback.print_exc()
                 model_result = None
 
-        # Sử dụng Vision API nếu có
+        # Sử dụng Vision API nếu có và đang dùng OpenAI (Groq không hỗ trợ vision)
         vision_result = None
-        if self.client:
+        if self.client and config.LLM_PROVIDER == "openai":
             vision_result = await self._analyze_with_vision_api(image, query, context, model_result)
+        elif self.client and config.LLM_PROVIDER == "groq":
+            # Groq không hỗ trợ vision, bỏ qua Vision API
+            print("ℹ️  Groq không hỗ trợ vision API, chỉ sử dụng YOLO model")
 
         # Kết hợp kết quả
         return self._combine_results(model_result, vision_result, query, context)
@@ -192,6 +212,8 @@ class ImageDiagnosisAgent(BaseAgent):
             # Tạo prompt phân tích bệnh cây trồng
             prompt = f"""
             Bạn là chuyên gia nông nghiệp và bệnh học thực vật. Phân tích hình ảnh này để chẩn đoán bệnh cây trồng.
+
+            QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.
 
             Câu hỏi của người dùng: {query}
             Ngữ cảnh: {context}
@@ -231,7 +253,7 @@ class ImageDiagnosisAgent(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Bạn là một chuyên gia nông nghiệp và bệnh học thực vật với nhiều năm kinh nghiệm trong việc chẩn đoán và điều trị bệnh cây trồng. Bạn có khả năng nhận dạng các loại bệnh phổ biến trên cây trồng qua hình ảnh.",
+                        "content": "Bạn là một chuyên gia nông nghiệp và bệnh học thực vật với nhiều năm kinh nghiệm trong việc chẩn đoán và điều trị bệnh cây trồng. Bạn có khả năng nhận dạng các loại bệnh phổ biến trên cây trồng qua hình ảnh. QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.",
                     },
                     {
                         "role": "user",
@@ -245,7 +267,6 @@ class ImageDiagnosisAgent(BaseAgent):
                     },
                 ],
                 temperature=self.temperature,
-                max_tokens=2000,
             )
 
             analysis_text = response.choices[0].message.content

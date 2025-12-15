@@ -23,11 +23,17 @@ class DiagnosisValidatorAgent(BaseAgent):
         context = input_data.get("context", {})
 
         # Lấy thông tin chẩn đoán từ Agent 2
-        agent2_diagnosis = agent2_result.get("output", {})
-        diagnosis = agent2_diagnosis.get("diagnosis", "")
-        confidence = agent2_diagnosis.get("confidence", 0.0)
-        disease_name = agent2_diagnosis.get("disease_name", "")
-        findings = agent2_diagnosis.get("findings", [])
+        # Lưu ý: agent2_result đã là output trực tiếp từ orchestrator (không cần .get("output", {}))
+        diagnosis = agent2_result.get("diagnosis", "")
+        confidence = agent2_result.get("confidence", 0.0)
+        disease_name = agent2_result.get("disease_name", "")
+        findings = agent2_result.get("findings", [])
+
+        # Debug logging
+        print(f"🔍 [Agent 3 Debug] agent2_result keys: {list(agent2_result.keys())}")
+        print(f"🔍 [Agent 3 Debug] disease_name: {disease_name}")
+        print(f"🔍 [Agent 3 Debug] confidence: {confidence}")
+        print(f"🔍 [Agent 3 Debug] diagnosis length: {len(diagnosis) if diagnosis else 0}")
 
         # Thẩm định chẩn đoán
         validation_result = await self._validate_diagnosis(
@@ -111,12 +117,11 @@ class DiagnosisValidatorAgent(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Bạn là một chuyên gia bệnh học thực vật với nhiều năm kinh nghiệm trong việc thẩm định và xác nhận chẩn đoán bệnh cây trồng. Bạn có khả năng đánh giá độ tin cậy của chẩn đoán và cảnh báo về các nguy cơ nhầm lẫn.",
+                        "content": "Bạn là một chuyên gia bệnh học thực vật với nhiều năm kinh nghiệm trong việc thẩm định và xác nhận chẩn đoán bệnh cây trồng. Bạn có khả năng đánh giá độ tin cậy của chẩn đoán và cảnh báo về các nguy cơ nhầm lẫn. QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.",
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=2000,
             )
 
             validation_text = response.choices[0].message.content
@@ -145,6 +150,10 @@ class DiagnosisValidatorAgent(BaseAgent):
         try:
             prompt = f"""
             Bạn là chuyên gia bệnh học thực vật. Hãy xác định tác nhân gây bệnh dựa trên chẩn đoán sau:
+
+            QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.
+
+            QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.
 
             Câu hỏi của người dùng: {user_query}
             Ngữ cảnh: {context}
@@ -192,7 +201,6 @@ class DiagnosisValidatorAgent(BaseAgent):
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=2000,
             )
 
             pathogen_text = response.choices[0].message.content

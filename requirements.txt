@@ -9,6 +9,9 @@ groq>=0.4.0
 langchain>=0.1.0
 langchain-openai>=0.0.5
 
+# HuggingFace (chỉ cần requests cho Inference API)
+# Không cần transformers, torch nếu dùng Inference API (cloud)
+
 # Image Processing
 pillow>=10.0.0
 opencv-python>=4.8.0  # Note: May show warning about NumPy 2.x, but works with NumPy 1.x
@@ -34,6 +37,8 @@ matplotlib>=3.7.0
 # Utilities
 python-dotenv>=1.0.0
 pydantic>=2.0.0
+colorama>=0.4.6  # For colored terminal output in test script
+requests>=2.31.0  # For testing API endpoints
 # Development dependencies
 # Code Quality Tools
 black>=23.0.0

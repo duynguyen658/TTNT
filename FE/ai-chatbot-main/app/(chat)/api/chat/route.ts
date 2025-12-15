@@ -21,7 +21,7 @@ import { type RequestHints, systemPrompt } from '@/lib/ai/prompts';
 import { myProvider } from '@/lib/ai/providers';
 import { createDocument } from '@/lib/ai/tools/create-document';
 import { getWeather } from '@/lib/ai/tools/get-weather';
-import { plantDiagnosis } from '@/lib/ai/tools/plant-diagnosis';
+import { createPlantDiagnosisTool } from '@/lib/ai/tools/plant-diagnosis';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { isProductionEnvironment } from '@/lib/constants';
@@ -152,7 +152,13 @@ export async function POST(request: Request) {
       // New chat - no need to fetch messages, it's empty
     }
 
+    // Không giới hạn messages - để model tự xử lý với context window lớn
+    // Model hiện tại (grok-2-vision-1212) hỗ trợ context window rất lớn
     const uiMessages = [...convertToUIMessages(messagesFromDb), message];
+
+    console.log(
+      `[Chat API] Total messages in DB: ${messagesFromDb.length}, Sending: ${uiMessages.length} messages`
+    );
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -183,19 +189,46 @@ export async function POST(request: Request) {
 
     const stream = createUIMessageStream({
       execute: ({ writer: dataStream }) => {
+        // Tối ưu messages: Nếu có quá nhiều messages, chỉ giữ lại message mới nhất và system prompt
+        // Điều này giúp tránh vượt quá token limit của Vercel AI Gateway (8192 tokens)
+        let optimizedMessages = convertToModelMessages(uiMessages);
+
+        // Nếu có quá nhiều messages (>20), chỉ giữ lại:
+        // - System message (từ systemPrompt)
+        // - 2 messages gần nhất (1 cặp user-assistant) để giữ context
+        // - Message hiện tại
+        if (uiMessages.length > 20) {
+          console.log(
+            `[Chat API] Optimizing messages: ${uiMessages.length} -> keeping last 2 + current`
+          );
+          // Lấy 2 messages gần nhất (trước message hiện tại)
+          const recentMessages = uiMessages.slice(-3, -1); // 2 messages trước message cuối
+          optimizedMessages = convertToModelMessages([...recentMessages, message]);
+        }
+
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
           system: systemPrompt({ selectedChatModel, requestHints }),
-          messages: convertToModelMessages(uiMessages),
+          messages: optimizedMessages,
           stopWhen: stepCountIs(5),
+          // Tăng maxTokens để hỗ trợ context dài hơn (nếu model hỗ trợ)
+          // Grok models thường hỗ trợ context window rất lớn (128k+ tokens)
+          // Nhưng Vercel AI Gateway có thể có giới hạn riêng
+          maxTokens: undefined, // Bỏ giới hạn, để model tự quyết định
           experimental_activeTools:
             selectedChatModel === 'chat-model-reasoning'
               ? []
-              : ['getWeather', 'createDocument', 'updateDocument', 'requestSuggestions'],
+              : [
+                  'getWeather',
+                  'createDocument',
+                  'updateDocument',
+                  'requestSuggestions',
+                  'plantDiagnosis',
+                ],
           experimental_transform: smoothStream({ chunking: 'word' }),
           tools: {
             getWeather,
-            plantDiagnosis,
+            plantDiagnosis: createPlantDiagnosisTool(uiMessages),
             createDocument: createDocument({ session, dataStream }),
             updateDocument: updateDocument({ session, dataStream }),
             requestSuggestions: requestSuggestions({

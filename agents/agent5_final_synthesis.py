@@ -67,14 +67,18 @@ class FinalSynthesisAgent(BaseAgent):
         context: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Tổng hợp kết quả từ tất cả các agent theo flow mới"""
+        # Lưu ý: agent1, agent2, agent3, agent4 đã là output từ orchestrator
+        # (agent_results["agent1_output"], agent_results["agent2_output"], etc.)
+        # Nên không cần .get("output", {}) nữa
+
         synthesis = {
             "user_query": user_query,
             "context": context,
             "agent_results": {
-                "information_collection": agent1,  # Agent 1: Thu thập & Phân tích Yêu cầu
-                "image_diagnosis": agent2,  # Agent 2: Chẩn đoán Bệnh từ Hình ảnh
-                "diagnosis_validation": agent3,  # Agent 3: Thẩm định Chẩn đoán & Xác định Tác nhân
-                "knowledge_experience": agent4,  # Agent 4: Kiến thức & Kinh nghiệm Thực tế
+                "information_collection": agent1,  # Agent 1 output
+                "image_diagnosis": agent2,  # Agent 2 output
+                "diagnosis_validation": agent3,  # Agent 3 output
+                "knowledge_experience": agent4,  # Agent 4 output
             },
             "key_findings": [],
             "conflicts": [],
@@ -82,25 +86,28 @@ class FinalSynthesisAgent(BaseAgent):
         }
 
         # Thu thập key findings từ mỗi agent
+        # Agent 1: output đã là dict trực tiếp
         if agent1:
-            findings = agent1.get("output", {}).get("extracted_keywords", [])
+            findings = agent1.get("extracted_keywords", [])
             synthesis["key_findings"].extend([("information", f) for f in findings])
 
+        # Agent 2: output đã là dict trực tiếp
         if agent2:
-            diagnosis = agent2.get("output", {}).get("diagnosis", "")
-            confidence = agent2.get("output", {}).get("confidence", 0.0)
-            disease_name = agent2.get("output", {}).get("disease_name", "")
-            if diagnosis:
+            diagnosis = agent2.get("diagnosis", "")
+            confidence = agent2.get("confidence", 0.0)
+            disease_name = agent2.get("disease_name", "")
+            if diagnosis or disease_name:
                 synthesis["key_findings"].append(
                     (
                         "image_diagnosis",
-                        f"{disease_name}: {diagnosis[:200]} (độ tin cậy: {confidence:.2%})",
+                        f"{disease_name or 'Unknown'}: {diagnosis[:200] if diagnosis else 'No description'} (độ tin cậy: {confidence:.2%})",
                     )
                 )
 
+        # Agent 3: output đã là dict trực tiếp
         if agent3:
-            validation = agent3.get("output", {}).get("validation", {})
-            pathogen = agent3.get("output", {}).get("pathogen_analysis", {})
+            validation = agent3.get("validation", {})
+            pathogen = agent3.get("pathogen_analysis", {})
             validated_confidence = validation.get("final_confidence", 0.0)
             pathogen_type = pathogen.get("pathogen_type", "unknown")
             if validation:
@@ -111,9 +118,10 @@ class FinalSynthesisAgent(BaseAgent):
                     )
                 )
 
+        # Agent 4: output đã là dict trực tiếp
         if agent4:
-            knowledge = agent4.get("output", {}).get("knowledge_points", [])
-            experience = agent4.get("output", {}).get("practical_experience", [])
+            knowledge = agent4.get("knowledge_points", [])
+            experience = agent4.get("practical_experience", [])
             if knowledge or experience:
                 synthesis["key_findings"].append(
                     (
@@ -134,11 +142,11 @@ class FinalSynthesisAgent(BaseAgent):
         """Phát hiện xung đột giữa các kết quả"""
         conflicts = []
 
-        # Lấy thông tin từ Agent 2 (chẩn đoán ban đầu)
-        agent2_confidence = agent2.get("output", {}).get("confidence", 0.0)
+        # Lấy thông tin từ Agent 2 (chẩn đoán ban đầu) - output trực tiếp
+        agent2_confidence = agent2.get("confidence", 0.0) if agent2 else 0.0
 
-        # Lấy thông tin từ Agent 3 (thẩm định)
-        agent3_validation = agent3.get("output", {}).get("validation", {})
+        # Lấy thông tin từ Agent 3 (thẩm định) - output trực tiếp
+        agent3_validation = agent3.get("validation", {}) if agent3 else {}
         agent3_confidence = agent3_validation.get("final_confidence", 0.0)
         agent3_warnings = agent3_validation.get("warnings", [])
 
@@ -159,28 +167,28 @@ class FinalSynthesisAgent(BaseAgent):
         """Tìm điểm đồng thuận giữa các kết quả"""
         consensus = {"points": [], "confidence": 0.5}
 
-        # Thu thập các điểm chung từ các agent
+        # Thu thập các điểm chung từ các agent - output trực tiếp
         all_findings = []
 
         # Từ Agent 2 (chẩn đoán hình ảnh)
         if agent2:
-            findings = agent2.get("output", {}).get("findings", [])
+            findings = agent2.get("findings", [])
             all_findings.extend(findings)
-            disease_name = agent2.get("output", {}).get("disease_name", "")
+            disease_name = agent2.get("disease_name", "")
             if disease_name:
                 all_findings.append(f"Chẩn đoán: {disease_name}")
 
         # Từ Agent 3 (thẩm định)
         if agent3:
-            pathogen = agent3.get("output", {}).get("pathogen_analysis", {})
+            pathogen = agent3.get("pathogen_analysis", {})
             pathogen_type = pathogen.get("pathogen_type", "")
             if pathogen_type:
                 all_findings.append(f"Tác nhân: {pathogen_type}")
 
         # Từ Agent 4 (kiến thức và kinh nghiệm)
         if agent4:
-            knowledge_points = agent4.get("output", {}).get("knowledge_points", [])
-            prevention_tips = agent4.get("output", {}).get("prevention_tips", [])
+            knowledge_points = agent4.get("knowledge_points", [])
+            prevention_tips = agent4.get("prevention_tips", [])
             all_findings.extend(knowledge_points[:3])
             all_findings.extend(prevention_tips[:2])
 
@@ -188,7 +196,7 @@ class FinalSynthesisAgent(BaseAgent):
 
         # Tính confidence dựa trên số lượng findings và độ tin cậy từ Agent 3
         agent3_confidence = (
-            agent3.get("output", {}).get("validation", {}).get("final_confidence", 0.5)
+            agent3.get("validation", {}).get("final_confidence", 0.5) if agent3 else 0.5
         )
         if len(all_findings) > 3:
             consensus["confidence"] = max(agent3_confidence, 0.6)
@@ -207,15 +215,22 @@ class FinalSynthesisAgent(BaseAgent):
         try:
             # Tạo prompt tổng hợp
             # Lấy thông tin từ các agent
+            # Lưu ý: agent_results đã chứa output trực tiếp (không cần .get("output", {}))
             agent1_info = synthesis.get("agent_results", {}).get("information_collection", {})
-            agent2_info = (
-                synthesis.get("agent_results", {}).get("image_diagnosis", {}).get("output", {})
+            agent2_info = synthesis.get("agent_results", {}).get("image_diagnosis", {})
+            agent3_info = synthesis.get("agent_results", {}).get("diagnosis_validation", {})
+            agent4_info = synthesis.get("agent_results", {}).get("knowledge_experience", {})
+
+            # Debug logging
+            print(f"🔍 [Agent 5 Debug] agent2_info keys: {list(agent2_info.keys())}")
+            print(
+                f"🔍 [Agent 5 Debug] agent2_info.disease_name: {agent2_info.get('disease_name', 'NOT FOUND')}"
             )
-            agent3_info = (
-                synthesis.get("agent_results", {}).get("diagnosis_validation", {}).get("output", {})
+            print(
+                f"🔍 [Agent 5 Debug] agent2_info.diagnosis: {agent2_info.get('diagnosis', 'NOT FOUND')[:100] if agent2_info.get('diagnosis') else 'NOT FOUND'}"
             )
-            agent4_info = (
-                synthesis.get("agent_results", {}).get("knowledge_experience", {}).get("output", {})
+            print(
+                f"🔍 [Agent 5 Debug] agent2_info.confidence: {agent2_info.get('confidence', 'NOT FOUND')}"
             )
 
             synthesis_text = f"""
@@ -247,6 +262,8 @@ class FinalSynthesisAgent(BaseAgent):
 
             prompt = f"""
             Bạn là chuyên gia nông nghiệp hàng đầu. Dựa trên tổng hợp kết quả từ hệ thống Multi-Agent (5 agents), hãy đưa ra tư vấn điều trị bệnh cây trồng cuối cùng cho người dùng:
+
+            QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác. Tất cả tên bệnh, thuật ngữ khoa học phải được dịch sang tiếng Việt.
 
             Câu hỏi của người dùng: {user_query}
 
@@ -294,12 +311,11 @@ class FinalSynthesisAgent(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Bạn là một chuyên gia nông nghiệp và bệnh học thực vật hàng đầu với nhiều năm kinh nghiệm. Bạn có khả năng tổng hợp thông tin từ nhiều nguồn (hình ảnh, dữ liệu, kinh nghiệm cộng đồng) để đưa ra tư vấn điều trị bệnh cây trồng chính xác, thực tế và hữu ích.",
+                        "content": "Bạn là một chuyên gia nông nghiệp và bệnh học thực vật hàng đầu với nhiều năm kinh nghiệm. Bạn có khả năng tổng hợp thông tin từ nhiều nguồn (hình ảnh, dữ liệu, kinh nghiệm cộng đồng) để đưa ra tư vấn điều trị bệnh cây trồng chính xác, thực tế và hữu ích. QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác. Tất cả tên bệnh, thuật ngữ khoa học phải được dịch sang tiếng Việt.",
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=2500,
             )
 
             advice_text = response.choices[0].message.content

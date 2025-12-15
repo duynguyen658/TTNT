@@ -136,14 +136,22 @@ class AgentOrchestrator:
             self._log(f"❌ Lỗi trong orchestrator: {e}")
             import traceback
 
-            traceback.print_exc()
-            return {"status": "error", "error": str(e), "execution_log": self.execution_log}
+            error_trace = traceback.format_exc()
+            print(f"\n❌ Orchestrator Exception: {e}")
+            print(error_trace)
+            return {
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "execution_log": self.execution_log,
+            }
 
     def _log(self, message: str):
         """Ghi log"""
         log_entry = f"[{len(self.execution_log) + 1}] {message}"
         self.execution_log.append(log_entry)
-        print(log_entry)
+        # Print với format đẹp hơn
+        print(f"  📌 {log_entry}")
 
     def get_agent_status(self) -> Dict[str, Any]:
         """Lấy trạng thái của tất cả agents"""

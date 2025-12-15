@@ -25,8 +25,9 @@ class UserInformationCollector(BaseAgent):
         }
 
         # Sử dụng LLM để làm giàu thông tin nếu có
-        if self.client:
-            enriched_info = await self._enrich_with_llm(user_query, user_context)
+        image = input_data.get("image_path") or input_data.get("image_data")
+        if self.client or (self.hf_api_key and self.provider == "huggingface"):
+            enriched_info = await self._enrich_with_llm(user_query, user_context, image)
             processed_info.update(enriched_info)
 
         return {
@@ -171,11 +172,10 @@ class UserInformationCollector(BaseAgent):
         )
         return any(keyword in query.lower() for keyword in social_keywords) or has_disease_query
 
-    async def _enrich_with_llm(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _enrich_with_llm(
+        self, query: str, context: Dict[str, Any], image: Any = None
+    ) -> Dict[str, Any]:
         """Sử dụng LLM để làm giàu thông tin"""
-        if not self.client:
-            return {}
-
         try:
             prompt = f"""
             Phân tích câu hỏi về bệnh cây trồng và trả về thông tin có cấu trúc:
@@ -190,23 +190,41 @@ class UserInformationCollector(BaseAgent):
             5. Loại tư vấn phù hợp (chẩn đoán, điều trị, phòng ngừa)
             """
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Bạn là một chuyên gia nông nghiệp AI, chuyên thu thập và phân tích thông tin về bệnh cây trồng từ người dùng.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=self.temperature,
-            )
+            # Sử dụng HuggingFace Inference API nếu có
+            if self.hf_api_key and self.provider == "huggingface":
+                # Image có thể là path (str) hoặc PIL Image
+                image_obj = image
+                if image and isinstance(image, str):
+                    # image_path - giữ nguyên để gửi qua API
+                    pass
+                elif image and hasattr(image, "save"):
+                    # PIL Image - giữ nguyên
+                    pass
 
-            llm_output = response.choices[0].message.content
+                llm_output = await self.call_hf_model(prompt, image_obj)
+            elif self.client and self.provider == "groq":
+                # Sử dụng OpenAI/Groq
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "Bạn là một chuyên gia nông nghiệp AI, chuyên thu thập và phân tích thông tin về bệnh cây trồng từ người dùng. QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=self.temperature,
+                )
+                llm_output = response.choices[0].message.content
+            else:
+                return {}
 
             return {"llm_analysis": llm_output, "enriched": True}
         except Exception as e:
             print(f"Error in LLM enrichment: {e}")
+            import traceback
+
+            traceback.print_exc()
             return {"enriched": False, "error": str(e)}
 
     def _determine_next_agents(self, processed_info: Dict[str, Any]) -> list:

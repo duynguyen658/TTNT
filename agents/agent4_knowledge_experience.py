@@ -1,7 +1,3 @@
-"""
-Agent 4: Kiến thức & Kinh nghiệm Thực tế
-"""
-
 from typing import Any, Dict, List
 
 import config
@@ -24,10 +20,11 @@ class KnowledgeExperienceAgent(BaseAgent):
         context = input_data.get("context", {})
 
         # Lấy thông tin từ Agent 2 và Agent 3
-        diagnosis = agent2_result.get("output", {}).get("diagnosis", "")
-        disease_name = agent2_result.get("output", {}).get("disease_name", "")
-        pathogen_info = agent3_result.get("output", {}).get("pathogen_analysis", {})
-        validation_info = agent3_result.get("output", {}).get("validation", {})
+        # Lưu ý: agent2_result và agent3_result đã là output trực tiếp từ orchestrator
+        diagnosis = agent2_result.get("diagnosis", "")
+        disease_name = agent2_result.get("disease_name", "")
+        pathogen_info = agent3_result.get("pathogen_analysis", {})
+        validation_info = agent3_result.get("validation", {})
 
         # Bổ sung kiến thức và kinh nghiệm
         knowledge_result = await self._provide_knowledge_and_experience(
@@ -60,6 +57,8 @@ class KnowledgeExperienceAgent(BaseAgent):
 
             prompt = f"""
             Bạn là chuyên gia nông nghiệp với nhiều năm kinh nghiệm thực tế. Hãy bổ sung kiến thức nông học và kinh nghiệm thực tế cho trường hợp bệnh cây trồng sau:
+
+            QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.
 
             Câu hỏi của người dùng: {user_query}
             Ngữ cảnh: {context}
@@ -115,12 +114,11 @@ class KnowledgeExperienceAgent(BaseAgent):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Bạn là một chuyên gia nông nghiệp với nhiều năm kinh nghiệm thực tế trong việc chẩn đoán, phòng ngừa và điều trị bệnh cây trồng. Bạn có kiến thức sâu về nông học và am hiểu các kinh nghiệm thực tế từ nông dân. Bạn có khả năng đưa ra lời khuyên thực tế, dễ hiểu và phù hợp với điều kiện Việt Nam.",
+                        "content": "Bạn là một chuyên gia nông nghiệp với nhiều năm kinh nghiệm thực tế trong việc chẩn đoán, phòng ngừa và điều trị bệnh cây trồng. Bạn có kiến thức sâu về nông học và am hiểu các kinh nghiệm thực tế từ nông dân. Bạn có khả năng đưa ra lời khuyên thực tế, dễ hiểu và phù hợp với điều kiện Việt Nam. QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.",
                     },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=2500,
             )
 
             knowledge_text = response.choices[0].message.content
