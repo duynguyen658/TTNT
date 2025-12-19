@@ -221,89 +221,164 @@ class FinalSynthesisAgent(BaseAgent):
             agent3_info = synthesis.get("agent_results", {}).get("diagnosis_validation", {})
             agent4_info = synthesis.get("agent_results", {}).get("knowledge_experience", {})
 
+            # Extract conversation history from context
+            original_context = synthesis.get("context", {})
+            conversation_history = (
+                original_context.get("conversation_history", [])
+                if isinstance(original_context, dict)
+                else []
+            )
+
+            # Prepare conversation history text (initialize before use)
+            history_text = ""
+            if conversation_history:
+                history_text = "\n\nLịch sử cuộc trò chuyện trước đó:\n"
+                for msg in conversation_history[-6:]:  # Last 6 messages (3 pairs)
+                    role_name = "Người dùng" if msg.get("role") == "user" else "Hệ thống"
+                    content = msg.get("content", "")
+                    # Truncate long messages
+                    if len(content) > 500:
+                        content = content[:500] + "..."
+                    history_text += f"- {role_name}: {content}\n"
+
+            # Kiểm tra xem có output từ Agent 2 (chẩn đoán từ ảnh) không
+            has_image_diagnosis = agent2_info and (
+                agent2_info.get("disease_name")
+                or agent2_info.get("diagnosis")
+                or agent2_info.get("confidence", 0) > 0
+            )
+
             # Debug logging
             print(f"🔍 [Agent 5 Debug] agent2_info keys: {list(agent2_info.keys())}")
+            print(f"🔍 [Agent 5 Debug] has_image_diagnosis: {has_image_diagnosis}")
+            print(f"🔍 [Agent 5 Debug] conversation_history length: {len(conversation_history)}")
             print(
                 f"🔍 [Agent 5 Debug] agent2_info.disease_name: {agent2_info.get('disease_name', 'NOT FOUND')}"
             )
-            print(
-                f"🔍 [Agent 5 Debug] agent2_info.diagnosis: {agent2_info.get('diagnosis', 'NOT FOUND')[:100] if agent2_info.get('diagnosis') else 'NOT FOUND'}"
-            )
-            print(
-                f"🔍 [Agent 5 Debug] agent2_info.confidence: {agent2_info.get('confidence', 'NOT FOUND')}"
-            )
 
-            synthesis_text = f"""
-            Tổng hợp kết quả từ các agent:
+            if has_image_diagnosis:
+                # Có chẩn đoán từ ảnh → Tạo báo cáo chẩn đoán chi tiết
+                synthesis_text = f"""
+                Tổng hợp kết quả từ các agent:
 
-            1. Agent 1 - Thu thập & Phân tích Yêu cầu:
-               - Câu hỏi đã được phân tích: {user_query}
-               - Từ khóa: {agent1_info.get('extracted_keywords', [])[:5]}
+                1. Agent 1 - Thu thập & Phân tích Yêu cầu:
+                   - Câu hỏi đã được phân tích: {user_query}
+                   - Từ khóa: {agent1_info.get('extracted_keywords', [])[:5]}
 
-            2. Agent 2 - Chẩn đoán Bệnh từ Hình ảnh:
-               - Chẩn đoán ban đầu: {agent2_info.get('diagnosis', 'N/A')[:300]}
-               - Tên bệnh: {agent2_info.get('disease_name', 'N/A')}
-               - Độ tin cậy ban đầu: {agent2_info.get('confidence', 0.0):.2%}
+                2. Agent 2 - Chẩn đoán Bệnh từ Hình ảnh:
+                   - Chẩn đoán ban đầu: {agent2_info.get('diagnosis', 'N/A')[:300]}
+                   - Tên bệnh: {agent2_info.get('disease_name', 'N/A')}
 
-            3. Agent 3 - Thẩm định Chẩn đoán & Xác định Tác nhân:
-               - Độ tin cậy sau thẩm định: {agent3_info.get('validation', {}).get('final_confidence', 0.0):.2%}
-               - Tác nhân gây bệnh: {agent3_info.get('pathogen_analysis', {}).get('pathogen_type', 'N/A')}
-               - Cảnh báo: {agent3_info.get('validation', {}).get('warnings', [])[:2]}
+                3. Agent 3 - Thẩm định Chẩn đoán & Xác định Tác nhân:
+                   - Tác nhân gây bệnh: {agent3_info.get('pathogen_analysis', {}).get('pathogen_type', 'N/A')}
+                   - Cảnh báo: {agent3_info.get('validation', {}).get('warnings', [])[:2]}
 
-            4. Agent 4 - Kiến thức & Kinh nghiệm Thực tế:
-               - Kiến thức nông học: {len(agent4_info.get('knowledge_points', []))} điểm
-               - Kinh nghiệm thực tế: {len(agent4_info.get('practical_experience', []))} điểm
-               - Biện pháp phòng ngừa: {len(agent4_info.get('prevention_tips', []))} điểm
+                4. Agent 4 - Kiến thức & Kinh nghiệm Thực tế:
+                   - Kiến thức nông học: {len(agent4_info.get('knowledge_points', []))} điểm
+                   - Kinh nghiệm thực tế: {len(agent4_info.get('practical_experience', []))} điểm
+                   - Biện pháp phòng ngừa: {len(agent4_info.get('prevention_tips', []))} điểm
 
-            Các phát hiện chính: {synthesis.get('key_findings', [])}
-            Xung đột: {synthesis.get('conflicts', [])}
-            Đồng thuận: {synthesis.get('consensus', {})}
-            """
+                Các phát hiện chính: {synthesis.get('key_findings', [])}
+                Xung đột: {synthesis.get('conflicts', [])}
+                Đồng thuận: {synthesis.get('consensus', {})}
+                """
+            else:
+                # Không có chẩn đoán từ ảnh → Chỉ tư vấn chung dựa trên câu hỏi
+                synthesis_text = f"""
+                Tổng hợp kết quả từ các agent:
 
-            prompt = f"""
-            Bạn là chuyên gia nông nghiệp hàng đầu. Dựa trên tổng hợp kết quả từ hệ thống Multi-Agent (5 agents), hãy đưa ra tư vấn điều trị bệnh cây trồng cuối cùng cho người dùng:
+                1. Agent 1 - Thu thập & Phân tích Yêu cầu:
+                   - Câu hỏi đã được phân tích: {user_query}
+                   - Từ khóa: {agent1_info.get('extracted_keywords', [])[:5]}
+                   - Phân tích LLM: {agent1_info.get('llm_analysis', 'N/A')[:500]}
 
-            QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác. Tất cả tên bệnh, thuật ngữ khoa học phải được dịch sang tiếng Việt.
+                4. Agent 4 - Kiến thức & Kinh nghiệm Thực tế:
+                   - Kiến thức nông học: {len(agent4_info.get('knowledge_points', []))} điểm
+                   - Kinh nghiệm thực tế: {len(agent4_info.get('practical_experience', []))} điểm
+                   - Biện pháp phòng ngừa: {len(agent4_info.get('prevention_tips', []))} điểm
 
-            Câu hỏi của người dùng: {user_query}
+                LƯU Ý: Không có hình ảnh để chẩn đoán, chỉ dựa trên câu hỏi và kiến thức chung.
+                """
 
-            {synthesis_text}
+            if has_image_diagnosis:
+                # Có chẩn đoán từ ảnh → Báo cáo chẩn đoán chi tiết
+                prompt = f"""
+                Bạn là chuyên gia nông nghiệp hàng đầu. Dựa trên tổng hợp kết quả từ hệ thống Multi-Agent (5 agents), hãy đưa ra tư vấn điều trị bệnh cây trồng cuối cùng cho người dùng:
 
-            Hãy cung cấp một báo cáo tư vấn đầy đủ và chi tiết, dễ hiểu cho nông dân:
+                QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác. Tất cả tên bệnh, thuật ngữ khoa học phải được dịch sang tiếng Việt.
 
-            1. CHẨN ĐOÁN CUỐI CÙNG:
-               - Tên bệnh đã được xác định (từ Agent 2 và Agent 3)
-               - Tác nhân gây bệnh (nấm/vi khuẩn/virus/dinh dưỡng/môi trường)
-               - Triệu chứng chính
-               - Độ tin cậy của chẩn đoán (từ Agent 3)
-               - Mức độ nghiêm trọng
+                Câu hỏi hiện tại của người dùng: {user_query}
+                {history_text}
 
-            2. TƯ VẤN ĐIỀU TRỊ CỤ THỂ:
-               - Biện pháp điều trị ngay lập tức (dựa trên tác nhân gây bệnh)
-               - Thuốc/phân bón phù hợp (nếu biết)
-               - Liều lượng và cách sử dụng chi tiết
-               - Thời gian điều trị dự kiến
-               - Dấu hiệu cho thấy điều trị có hiệu quả
+                {synthesis_text}
 
-            3. BIỆN PHÁP PHÒNG NGỪA:
-               - Cách phòng ngừa bệnh tái phát (từ kiến thức và kinh nghiệm thực tế)
-               - Chăm sóc cây trồng đúng cách
-               - Điều kiện môi trường phù hợp
-               - Lịch trình chăm sóc và theo dõi
+                Hãy cung cấp một báo cáo tư vấn đầy đủ và chi tiết, dễ hiểu cho nông dân:
 
-            4. CÁC BƯỚC TIẾP THEO:
-               - Hành động ngay lập tức (nếu cần)
-               - Theo dõi và đánh giá tiến độ
-               - Khi nào cần tham khảo chuyên gia
-               - Các dấu hiệu cảnh báo cần chú ý
+                1. CHẨN ĐOÁN CUỐI CÙNG:
+                   - Tên bệnh đã được xác định (từ Agent 2 và Agent 3)
+                   - Tác nhân gây bệnh (nấm/vi khuẩn/virus/dinh dưỡng/môi trường)
+                   - Triệu chứng chính
+                   - Mức độ nghiêm trọng
 
-            5. LƯU Ý QUAN TRỌNG:
-               - Cảnh báo về mức độ nghiêm trọng (nếu có)
-               - Các cảnh báo từ Agent 3 về nguy cơ nhầm lẫn
-               - Những điều cần tránh khi điều trị
-               - Khuyến nghị tham khảo thêm (nếu cần)
+                2. TƯ VẤN ĐIỀU TRỊ CỤ THỂ:
+                   - Biện pháp điều trị ngay lập tức (dựa trên tác nhân gây bệnh)
+                   - Thuốc/phân bón phù hợp (nếu biết)
+                   - Liều lượng và cách sử dụng chi tiết
+                   - Thời gian điều trị dự kiến
+                   - Dấu hiệu cho thấy điều trị có hiệu quả
 
-            Hãy trình bày một cách rõ ràng, dễ hiểu, có cấu trúc và thực tế, phù hợp với nông dân Việt Nam. Sử dụng ngôn ngữ đơn giản, tránh thuật ngữ khoa học phức tạp.
+                3. BIỆN PHÁP PHÒNG NGỪA:
+                   - Cách phòng ngừa bệnh tái phát (từ kiến thức và kinh nghiệm thực tế)
+                   - Chăm sóc cây trồng đúng cách
+                   - Điều kiện môi trường phù hợp
+                   - Lịch trình chăm sóc và theo dõi
+
+                4. CÁC BƯỚC TIẾP THEO:
+                   - Hành động ngay lập tức (nếu cần)
+                   - Theo dõi và đánh giá tiến độ
+                   - Khi nào cần tham khảo chuyên gia
+                   - Các dấu hiệu cảnh báo cần chú ý
+
+                5. LƯU Ý QUAN TRỌNG:
+                   - Cảnh báo về mức độ nghiêm trọng (nếu có)
+                   - Các cảnh báo từ Agent 3 về nguy cơ nhầm lẫn
+                   - Những điều cần tránh khi điều trị
+                   - Khuyến nghị tham khảo thêm (nếu cần)
+
+                Hãy trình bày một cách rõ ràng, dễ hiểu, có cấu trúc và thực tế, phù hợp với nông dân Việt Nam. Sử dụng ngôn ngữ đơn giản, tránh thuật ngữ khoa học phức tạp.
+                """
+            else:
+                # Không có chẩn đoán từ ảnh → Chỉ tư vấn chung
+                # Prepare conversation history text (if not already prepared above)
+                if not history_text and conversation_history:
+                    history_text = "\n\nLịch sử cuộc trò chuyện trước đó:\n"
+                    for msg in conversation_history[-6:]:  # Last 6 messages (3 pairs)
+                        role_name = "Người dùng" if msg.get("role") == "user" else "Hệ thống"
+                        content = msg.get("content", "")
+                        # Truncate long messages
+                        if len(content) > 500:
+                            content = content[:500] + "..."
+                        history_text += f"- {role_name}: {content}\n"
+
+                prompt = f"""
+                Bạn là chuyên gia nông nghiệp hàng đầu. Người dùng đã hỏi về bệnh cây trồng nhưng KHÔNG cung cấp hình ảnh để chẩn đoán.
+
+                QUAN TRỌNG: Bạn PHẢI chỉ sử dụng tiếng Việt trong mọi phản hồi. Không được sử dụng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác.
+
+                Câu hỏi hiện tại của người dùng: {user_query}
+                {history_text}
+
+                {synthesis_text}
+
+                Hãy trả lời câu hỏi của người dùng một cách hữu ích và chi tiết, nhưng LƯU Ý:
+                - KHÔNG tạo ra chẩn đoán cụ thể vì không có hình ảnh
+                - Nếu có lịch sử cuộc trò chuyện, hãy sử dụng thông tin từ đó để hiểu context
+                - Ví dụ: Nếu người dùng hỏi "bệnh đó nên dùng thuốc nào", hãy tham khảo bệnh đã được chẩn đoán trong lịch sử trước đó (ví dụ: "Bệnh Tomato leaf mosaic virus")
+                - Nếu câu hỏi về thuốc trừ sâu, hãy giải thích về thuốc đó
+                - Nếu câu hỏi về bệnh cây trồng, hãy giải thích chung về bệnh đó
+                - Khuyến khích người dùng upload hình ảnh để có chẩn đoán chính xác hơn
+
+                Hãy trả lời một cách tự nhiên, hữu ích, và dễ hiểu, có sử dụng context từ lịch sử cuộc trò chuyện nếu có.
             """
 
             response = self.client.chat.completions.create(

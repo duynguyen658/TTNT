@@ -221,148 +221,472 @@ export async function POST(request: Request) {
 
     let finalMergedUsage: AppUsage | undefined;
 
-    const stream = createUIMessageStream({
-      execute: ({ writer: dataStream }) => {
-        // Tối ưu messages: Nếu có quá nhiều messages, chỉ giữ lại message mới nhất và system prompt
-        // Điều này giúp tránh vượt quá token limit của Vercel AI Gateway (8192 tokens)
-        let optimizedMessages = convertToModelMessages(uiMessages);
+    // Check if message contains images - if yes, use Python backend directly with SSE
+    const imageParts =
+      message.parts?.filter(
+        (part: any) => part.type === 'file' && part.mediaType?.startsWith('image/')
+      ) || [];
+    const hasImage = imageParts.length > 0;
 
-        // Nếu có quá nhiều messages (>20), chỉ giữ lại:
-        // - System message (từ systemPrompt)
-        // - 2 messages gần nhất (1 cặp user-assistant) để giữ context
-        // - Message hiện tại
-        if (uiMessages.length > 20) {
-          console.log(
-            `[Chat API] Optimizing messages: ${uiMessages.length} -> keeping last 2 + current`
-          );
-          // Lấy 2 messages gần nhất (trước message hiện tại)
-          const recentMessages = uiMessages.slice(-3, -1); // 2 messages trước message cuối
-          optimizedMessages = convertToModelMessages([...recentMessages, message]);
+    console.log('[Chat API] Message has image:', hasImage, 'Image count:', imageParts.length);
+
+    // If has image, use Python backend directly with SSE (no AI SDK)
+    if (hasImage) {
+      console.log('[Chat API] Image detected, using Python backend with SSE (no AI SDK)');
+
+      // Extract user query
+      let userQuery = '';
+      if (message.parts && message.parts.length > 0) {
+        const textParts = message.parts
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text);
+        userQuery = textParts.join(' ').trim();
+      }
+
+      if (!userQuery) {
+        userQuery = 'Chẩn đoán bệnh cây trồng từ hình ảnh';
+      }
+
+      // Extract and convert image to base64
+      let imageData: string | null = null;
+      if (imageParts.length > 0) {
+        const firstImage = imageParts[0] as any;
+        if (firstImage.url) {
+          try {
+            console.log('[Chat API] Fetching image from URL:', firstImage.url);
+            const imageResponse = await fetch(firstImage.url);
+            if (imageResponse.ok) {
+              const imageBuffer = await imageResponse.arrayBuffer();
+              const bytes = new Uint8Array(imageBuffer);
+              const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+              imageData = btoa(binary);
+              console.log('[Chat API] Image converted to base64, size:', imageData.length);
+            }
+          } catch (error) {
+            console.error('[Chat API] Error fetching image:', error);
+          }
+        }
+      }
+
+      // Use createUIMessageStream for Python backend - format compatible with AI SDK
+      const pythonStream = createUIMessageStream({
+        execute: async ({ writer: dataStream }) => {
+          const messageId = generateUUID();
+
+          try {
+            // Call Python backend
+            const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:8000';
+            const response = await fetch(`${PYTHON_API_URL}/api/chat`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                user_query: userQuery,
+                user_context: {},
+                image_data: imageData,
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`Python backend error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const result = data.result || data;
+
+            // Extract response text
+            let responseText = '';
+            if (result?.final_advice) {
+              const agent5Output = result.final_advice;
+              if (typeof agent5Output === 'string') {
+                responseText = agent5Output;
+              } else if (agent5Output && typeof agent5Output === 'object') {
+                if (agent5Output.final_advice && typeof agent5Output.final_advice === 'object') {
+                  responseText = agent5Output.final_advice.full_advice || '';
+                }
+                if (!responseText) {
+                  responseText =
+                    agent5Output.full_advice ||
+                    agent5Output.diagnosis ||
+                    agent5Output.summary ||
+                    '';
+                }
+              }
+            }
+
+            if (!responseText && result?.agent_results?.agent5?.output) {
+              const output = result.agent_results.agent5.output;
+              if (typeof output === 'string') {
+                responseText = output;
+              } else if (output && typeof output === 'object') {
+                responseText =
+                  output.final_advice?.full_advice ||
+                  output.full_advice ||
+                  output.diagnosis ||
+                  output.summary ||
+                  '';
+              }
+            }
+
+            // DO NOT fallback to agent1 llm_analysis - it's just analysis, not final advice
+            if (!responseText || typeof responseText !== 'string' || responseText.trim() === '') {
+              console.error('[Chat API] Could not extract response text from Python backend');
+              console.error('[Chat API] Result keys:', Object.keys(result || {}));
+              console.error('[Chat API] final_advice:', result?.final_advice);
+              console.error('[Chat API] agent5 output:', result?.agent_results?.agent5?.output);
+              responseText = 'Không thể trích xuất phản hồi từ backend. Vui lòng thử lại.';
+            }
+
+            // Stream response word by word using dataStream.write
+            const words = responseText.split(/(\s+)/);
+
+            // Send text-start
+            dataStream.write({ type: 'text-start', id: messageId });
+
+            for (const word of words) {
+              if (word) {
+                // Send text-delta
+                dataStream.write({ type: 'text-delta', delta: word, id: messageId });
+                await new Promise(resolve => setTimeout(resolve, 10));
+              }
+            }
+
+            // Send text-end
+            dataStream.write({ type: 'text-end', id: messageId });
+
+            // Prepare assistant message for database saving
+            const assistantMessage: ChatMessage = {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: responseText }],
+            };
+
+            // Save assistant message to database
+            try {
+              await saveMessages({
+                messages: [
+                  {
+                    chatId: id,
+                    id: messageId,
+                    role: 'assistant',
+                    parts: assistantMessage.parts,
+                    attachments: [],
+                    createdAt: new Date(),
+                  },
+                ],
+              });
+            } catch (dbError: any) {
+              console.error('[Chat API] Error saving assistant message:', dbError);
+              // Continue even if saveMessages fails
+            }
+
+            // Send usage info
+            const estimatedTokens = Math.ceil(responseText.length / 4);
+            const promptTokens = Math.ceil(userQuery.length / 4);
+            const usage = {
+              promptTokens,
+              completionTokens: estimatedTokens,
+              totalTokens: promptTokens + estimatedTokens,
+            };
+            dataStream.write({ type: 'data-usage', data: usage });
+          } catch (error: any) {
+            console.error('[Chat API] Python backend error:', error);
+            const errorMessage = `Lỗi: ${error.message || 'Không thể kết nối đến backend'}`;
+            dataStream.write({ type: 'error', errorText: errorMessage });
+          }
+        },
+        generateId: generateUUID,
+      });
+
+      return new Response(pythonStream.pipeThrough(new JsonToSseTransformStream()));
+    }
+
+    // No image - check if query is related to agriculture/plant disease
+    console.log('[Chat API] No image, checking if query is related to agriculture');
+
+    // Extract user query
+    let userQuery = '';
+    if (message.parts && message.parts.length > 0) {
+      const textParts = message.parts
+        .filter((part: any) => part.type === 'text')
+        .map((part: any) => part.text);
+      userQuery = textParts.join(' ').trim();
+    }
+
+    if (!userQuery) {
+      userQuery = 'Xin chào';
+    }
+
+    // Check if query is related to agriculture/plant disease/pesticides
+    const isAgricultureQuery = (query: string): boolean => {
+      const queryLower = query.toLowerCase();
+
+      // Pattern 1: Câu hỏi về thuốc (có từ "thuốc" + tên thuốc hoặc từ khóa liên quan)
+      const hasMedicineQuestion =
+        /thuốc\s+(gì|nào|là|để|dùng|sử dụng|trị|chữa)/i.test(query) ||
+        /(pesticide|insecticide|fungicide|herbicide)/i.test(query) ||
+        /trừ\s+sâu|diệt\s+côn\s+trùng|bảo\s+vệ\s+thực\s+vật/i.test(query);
+
+      // Pattern 2: Tên thuốc (thường là từ tiếng Anh, có thể có số hoặc ký tự đặc biệt)
+      // Pattern: từ có chữ cái + số hoặc từ dài > 8 ký tự (có thể là tên thuốc khoa học)
+      const hasMedicineName =
+        /\b[a-z]{6,}(?:idin|phos|ate|ide|ol|in)\b/i.test(query) ||
+        /\b[a-z]+(?:[0-9]+|[a-z]{4,})\b/i.test(query);
+
+      // Pattern 3: Câu hỏi về bệnh cây trồng
+      const hasDiseaseQuestion =
+        /(bệnh|chẩn\s+đoán|nhận\s+dạng|triệu\s+chứng|điều\s+trị|chữa)/i.test(query);
+
+      // Pattern 4: Câu hỏi về cây trồng
+      const hasPlantQuestion = /\b(cây|lá|thân|rễ|quả|hoa|trái)\b/i.test(query);
+
+      // Pattern 5: Câu hỏi về nông nghiệp
+      const hasAgricultureQuestion = /(nông\s+nghiệp|trồng\s+trọt|canh\s+tác|vườn|ruộng)/i.test(
+        query
+      );
+
+      // Pattern 6: Câu hỏi về sâu bệnh
+      const hasPestQuestion = /\b(sâu|bọ|nấm|vi\s+khuẩn|virus|rầy|rệp|bọ\s+xít)\b/i.test(query);
+
+      // Nếu có bất kỳ pattern nào → là câu hỏi về nông nghiệp
+      return (
+        hasMedicineQuestion ||
+        (hasMedicineName && (hasMedicineQuestion || /thuốc/i.test(query))) ||
+        hasDiseaseQuestion ||
+        hasPlantQuestion ||
+        hasAgricultureQuestion ||
+        hasPestQuestion
+      );
+    };
+
+    // If query is related to agriculture, use Python backend
+    if (isAgricultureQuery(userQuery)) {
+      console.log('[Chat API] Agriculture-related query detected, using Python backend');
+
+      // Prepare conversation history for context
+      const conversationHistory = uiMessages
+        .slice(-10) // Last 10 messages for context (5 pairs)
+        .map((msg: ChatMessage) => ({
+          role: msg.role,
+          content:
+            msg.parts
+              ?.filter((part: any) => part.type === 'text')
+              .map((part: any) => part.text)
+              .join(' ') || '',
+        }))
+        .filter((msg: any) => msg.content.trim().length > 0);
+
+      // Use Python backend for agriculture queries
+      const pythonStream = createUIMessageStream({
+        execute: async ({ writer: dataStream }) => {
+          const messageId = generateUUID();
+
+          try {
+            // Call Python backend
+            const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:8000';
+            const response = await fetch(`${PYTHON_API_URL}/api/chat`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                user_query: userQuery,
+                user_context: {
+                  conversation_history: conversationHistory,
+                },
+                image_data: null,
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`Python backend error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const result = data.result || data;
+
+            // Extract response text
+            let responseText = '';
+            if (result?.final_advice) {
+              const agent5Output = result.final_advice;
+              if (typeof agent5Output === 'string') {
+                responseText = agent5Output;
+              } else if (agent5Output && typeof agent5Output === 'object') {
+                if (agent5Output.final_advice && typeof agent5Output.final_advice === 'object') {
+                  responseText = agent5Output.final_advice.full_advice || '';
+                }
+                if (!responseText) {
+                  responseText =
+                    agent5Output.full_advice ||
+                    agent5Output.diagnosis ||
+                    agent5Output.summary ||
+                    '';
+                }
+              }
+            }
+
+            if (!responseText && result?.agent_results?.agent5?.output) {
+              const output = result.agent_results.agent5.output;
+              if (typeof output === 'string') {
+                responseText = output;
+              } else if (output && typeof output === 'object') {
+                responseText =
+                  output.final_advice?.full_advice ||
+                  output.full_advice ||
+                  output.diagnosis ||
+                  output.summary ||
+                  '';
+              }
+            }
+
+            // DO NOT fallback to agent1 llm_analysis - it's just analysis, not final advice
+            if (!responseText || typeof responseText !== 'string' || responseText.trim() === '') {
+              console.error('[Chat API] Could not extract response text from Python backend');
+              console.error('[Chat API] Result keys:', Object.keys(result || {}));
+              console.error('[Chat API] final_advice:', result?.final_advice);
+              console.error('[Chat API] agent5 output:', result?.agent_results?.agent5?.output);
+              responseText = 'Không thể trích xuất phản hồi từ backend. Vui lòng thử lại.';
+            }
+
+            // Stream response word by word using dataStream.write
+            const words = responseText.split(/(\s+)/);
+
+            // Send text-start
+            dataStream.write({ type: 'text-start', id: messageId });
+
+            for (const word of words) {
+              if (word) {
+                // Send text-delta
+                dataStream.write({ type: 'text-delta', delta: word, id: messageId });
+                await new Promise(resolve => setTimeout(resolve, 10));
+              }
+            }
+
+            // Send text-end
+            dataStream.write({ type: 'text-end', id: messageId });
+
+            // Prepare assistant message for database saving
+            const assistantMessage: ChatMessage = {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: responseText }],
+            };
+
+            // Save assistant message to database
+            try {
+              await saveMessages({
+                messages: [
+                  {
+                    chatId: id,
+                    id: messageId,
+                    role: 'assistant',
+                    parts: assistantMessage.parts,
+                    attachments: [],
+                    createdAt: new Date(),
+                  },
+                ],
+              });
+            } catch (dbError: any) {
+              console.error('[Chat API] Error saving assistant message:', dbError);
+              // Continue even if saveMessages fails
+            }
+
+            // Send usage info
+            const estimatedTokens = Math.ceil(responseText.length / 4);
+            const promptTokens = Math.ceil(userQuery.length / 4);
+            const usage = {
+              promptTokens,
+              completionTokens: estimatedTokens,
+              totalTokens: promptTokens + estimatedTokens,
+            };
+            dataStream.write({ type: 'data-usage', data: usage });
+          } catch (error: any) {
+            console.error('[Chat API] Python backend error:', error);
+            const errorMessage = `Lỗi: ${error.message || 'Không thể kết nối đến backend'}`;
+            dataStream.write({ type: 'error', errorText: errorMessage });
+          }
+        },
+        generateId: generateUUID,
+      });
+
+      return new Response(pythonStream.pipeThrough(new JsonToSseTransformStream()));
+    }
+
+    // Not agriculture-related - return simple response
+    console.log('[Chat API] Not agriculture-related, returning simple response');
+
+    // Use createUIMessageStream for simple response
+    const simpleStream = createUIMessageStream({
+      execute: async ({ writer: dataStream }) => {
+        const messageId = generateUUID();
+
+        // Simple response for normal chat
+        const responseText = `Xin chào! Tôi là AI chuyên về chẩn đoán bệnh cây trồng.
+
+Để tôi có thể hỗ trợ bạn tốt nhất, vui lòng:
+- Upload hình ảnh cây bị bệnh để tôi có thể chẩn đoán
+- Hoặc mô tả chi tiết về triệu chứng bệnh của cây
+
+Tôi sẽ sử dụng hệ thống 5 agents để phân tích và đưa ra lời khuyên chi tiết.`;
+
+        // Stream response word by word using dataStream.write
+        const words = responseText.split(/(\s+)/);
+
+        // Send text-start
+        dataStream.write({ type: 'text-start', id: messageId });
+
+        for (const word of words) {
+          if (word) {
+            // Send text-delta
+            dataStream.write({ type: 'text-delta', delta: word, id: messageId });
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
         }
 
-        const result = streamText({
-          model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel, requestHints }),
-          messages: optimizedMessages,
-          stopWhen: stepCountIs(5),
-          // Note: maxTokens không còn được hỗ trợ trong AI SDK
-          // Model sẽ tự quyết định số lượng tokens dựa trên context window
-          experimental_activeTools:
-            selectedChatModel === 'chat-model-reasoning'
-              ? []
-              : [
-                  'getWeather',
-                  'createDocument',
-                  'updateDocument',
-                  'requestSuggestions',
-                  'plantDiagnosis',
-                ],
-          experimental_transform: smoothStream({ chunking: 'word' }),
-          tools: {
-            getWeather,
-            plantDiagnosis: createPlantDiagnosisTool(uiMessages),
-            createDocument: createDocument({ session, dataStream }),
-            updateDocument: updateDocument({ session, dataStream }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
-            }),
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
-          },
-          onFinish: async ({ usage }) => {
-            try {
-              const providers = await getTokenlensCatalog();
-              const modelId = myProvider.languageModel(selectedChatModel).modelId;
-              if (!modelId) {
-                finalMergedUsage = usage;
-                dataStream.write({
-                  type: 'data-usage',
-                  data: finalMergedUsage,
-                });
-                return;
-              }
+        // Send text-end
+        dataStream.write({ type: 'text-end', id: messageId });
 
-              if (!providers) {
-                finalMergedUsage = usage;
-                dataStream.write({
-                  type: 'data-usage',
-                  data: finalMergedUsage,
-                });
-                return;
-              }
+        // Prepare assistant message for database saving
+        const assistantMessage: ChatMessage = {
+          id: messageId,
+          role: 'assistant',
+          parts: [{ type: 'text', text: responseText }],
+        };
 
-              const summary = getUsage({ modelId, usage, providers });
-              finalMergedUsage = { ...usage, ...summary, modelId } as AppUsage;
-              dataStream.write({ type: 'data-usage', data: finalMergedUsage });
-            } catch (err) {
-              console.warn('TokenLens enrichment failed', err);
-              finalMergedUsage = usage;
-              dataStream.write({ type: 'data-usage', data: finalMergedUsage });
-            }
-          },
-        });
-
-        result.consumeStream();
-
-        dataStream.merge(
-          result.toUIMessageStream({
-            sendReasoning: true,
-          })
-        );
-      },
-      generateId: generateUUID,
-      onFinish: async ({ messages }) => {
+        // Save assistant message to database
         try {
           await saveMessages({
-            messages: messages.map(currentMessage => ({
-              id: currentMessage.id,
-              role: currentMessage.role,
-              parts: currentMessage.parts,
-              createdAt: new Date(),
-              attachments: [],
-              chatId: id,
-            })),
+            messages: [
+              {
+                chatId: id,
+                id: messageId,
+                role: 'assistant',
+                parts: assistantMessage.parts,
+                attachments: [],
+                createdAt: new Date(),
+              },
+            ],
           });
         } catch (dbError: any) {
-          console.error('[chat] Error saving messages in onFinish:', dbError);
+          console.error('[Chat API] Error saving assistant message:', dbError);
           // Continue even if saveMessages fails
         }
 
-        if (finalMergedUsage) {
-          try {
-            await updateChatLastContextById({
-              chatId: id,
-              context: finalMergedUsage,
-            });
-          } catch (err) {
-            console.warn('Unable to persist last usage for chat', id, err);
-          }
-        }
+        // Send usage info
+        const estimatedTokens = Math.ceil(responseText.length / 4);
+        const promptTokens = Math.ceil(userQuery.length / 4);
+        const usage = {
+          promptTokens,
+          completionTokens: estimatedTokens,
+          totalTokens: promptTokens + estimatedTokens,
+        };
+        dataStream.write({ type: 'data-usage', data: usage });
       },
-      onError: error => {
-        console.error('[chat] Error in streamText:', error);
-        // Return user-friendly error message
-        if (error instanceof Error) {
-          return `Đã xảy ra lỗi: ${error.message}`;
-        }
-        return 'Oops, an error occurred!';
-      },
+      generateId: generateUUID,
     });
 
-    // const streamContext = getStreamContext();
-
-    // if (streamContext) {
-    //   return new Response(
-    //     await streamContext.resumableStream(streamId, () =>
-    //       stream.pipeThrough(new JsonToSseTransformStream())
-    //     )
-    //   );
-    // }
-
-    return new Response(stream.pipeThrough(new JsonToSseTransformStream()));
+    return new Response(simpleStream.pipeThrough(new JsonToSseTransformStream()));
   } catch (error) {
     const vercelId = request.headers.get('x-vercel-id');
 
@@ -370,12 +694,33 @@ export async function POST(request: Request) {
       return error.toResponse();
     }
 
-    // Check for Vercel AI Gateway credit card error
-    if (
-      error instanceof Error &&
-      error.message?.includes('AI Gateway requires a valid credit card on file to service requests')
-    ) {
-      return new ChatSDKError('bad_request:activate_gateway').toResponse();
+    // Check for Vercel AI Gateway errors
+    if (error instanceof Error) {
+      if (
+        error.message?.includes(
+          'AI Gateway requires a valid credit card on file to service requests'
+        )
+      ) {
+        return new ChatSDKError('bad_request:activate_gateway').toResponse();
+      }
+
+      // Handle insufficient funds error (should not happen now, but keep for safety)
+      if (
+        error.message?.includes('Insufficient funds') ||
+        error.message?.includes('insufficient_funds')
+      ) {
+        console.error('[chat] Vercel AI Gateway insufficient funds (should not happen)');
+        return new ChatSDKError('bad_request:api').toResponse();
+      }
+
+      // Handle other AI Gateway errors (should not happen now, but keep for safety)
+      if (
+        error.message?.includes('AI Gateway') ||
+        error.message?.includes('GatewayInternalServerError')
+      ) {
+        console.error('[chat] AI Gateway error (should not happen):', error.message);
+        return new ChatSDKError('bad_request:api').toResponse();
+      }
     }
 
     // Log detailed error information

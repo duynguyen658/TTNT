@@ -1,7 +1,3 @@
-"""
-Base Agent class cho tất cả các agents trong hệ thống
-"""
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -81,13 +77,6 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Xử lý input và trả về kết quả
-        Args:
-            input_data: Dữ liệu đầu vào từ agent trước hoặc từ người dùng
-        Returns:
-            Dict chứa kết quả xử lý
-        """
         pass
 
     async def call_hf_model(self, prompt: str, image: Optional[Any] = None) -> str:

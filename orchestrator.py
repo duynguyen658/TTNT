@@ -1,7 +1,3 @@
-"""
-Hệ thống điều phối các agents
-"""
-
 import asyncio
 from typing import Any, Dict, List, Optional
 

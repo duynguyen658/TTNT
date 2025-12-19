@@ -1,7 +1,3 @@
-"""
-Agent 2: Chẩn đoán bệnh cây trồng dựa trên hình ảnh
-"""
-
 import base64
 import io
 import os
@@ -12,28 +8,24 @@ from PIL import Image
 import config
 from agents.base_agent import BaseAgent
 
-# Import YOLO model nhận dạng bệnh cây
 try:
     from yolo.inference_yolo import YOLOInference
 
     MODEL_AVAILABLE = True
 except ImportError as e:
     MODEL_AVAILABLE = False
-    print(f"⚠️  YOLO model module chưa được import: {e}")
-    print("👉 Cài đặt: pip install ultralytics opencv-python pillow")
-    print("⚠️  Sẽ chỉ sử dụng Vision API.")
+    print(f"YOLO model module chưa được import: {e}")
+    print("Cài đặt: pip install ultralytics opencv-python pillow")
+    print("Sẽ chỉ sử dụng Vision API.")
 
 
 class ImageDiagnosisAgent(BaseAgent):
-    """Agent chẩn đoán bệnh cây trồng dựa trên hình ảnh"""
-
     def __init__(self):
         super().__init__("agent2", config.AGENT_CONFIG["agent2"])
         self.disease_model = None
         self._load_disease_model()
 
     def _load_disease_model(self):
-        """Load YOLO model nhận dạng bệnh cây nếu có"""
         if not MODEL_AVAILABLE:
             return
 
@@ -52,23 +44,20 @@ class ImageDiagnosisAgent(BaseAgent):
                 if os.path.exists(alt_path):
                     model_path = alt_path
                 else:
-                    print(f"⚠️  Không tìm thấy YOLO model tại: {model_path}")
-                    print(f"⚠️  Đã thử: {abs_path}, {alt_path}")
+                    print(f"Không tìm thấy YOLO model tại: {model_path}")
+                    print(f"Đã thử: {abs_path}, {alt_path}")
                     return
 
         try:
             self.disease_model = YOLOInference(model_path, conf_threshold=0.25)
-            print(f"✅ Đã load YOLO model nhận dạng bệnh cây từ: {model_path}")
+            print(f"Đã load YOLO model nhận dạng bệnh cây từ: {model_path}")
         except Exception as e:
-            print(f"⚠️  Không thể load YOLO model từ {model_path}: {e}")
+            print(f"Không thể load YOLO model từ {model_path}: {e}")
             import traceback
 
             traceback.print_exc()
 
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Chẩn đoán bệnh cây trồng dựa trên hình ảnh
-        """
         image_path = input_data.get("image_path")
         image_data = input_data.get("image_data")  # Base64 encoded
         user_query = input_data.get("user_query", "")
@@ -191,7 +180,7 @@ class ImageDiagnosisAgent(BaseAgent):
             vision_result = await self._analyze_with_vision_api(image, query, context, model_result)
         elif self.client and config.LLM_PROVIDER == "groq":
             # Groq không hỗ trợ vision, bỏ qua Vision API
-            print("ℹ️  Groq không hỗ trợ vision API, chỉ sử dụng YOLO model")
+            print("Groq không hỗ trợ vision API, chỉ sử dụng YOLO model")
 
         # Kết hợp kết quả
         return self._combine_results(model_result, vision_result, query, context)

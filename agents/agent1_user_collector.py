@@ -177,10 +177,20 @@ class UserInformationCollector(BaseAgent):
     ) -> Dict[str, Any]:
         """Sử dụng LLM để làm giàu thông tin"""
         try:
+            # Extract conversation history from context
+            conversation_history = context.get("conversation_history", [])
+            history_text = ""
+            if conversation_history:
+                history_text = "\n\nLịch sử cuộc trò chuyện trước đó:\n"
+                for msg in conversation_history[-6:]:  # Last 6 messages (3 pairs)
+                    role_name = "Người dùng" if msg.get("role") == "user" else "Hệ thống"
+                    history_text += f"- {role_name}: {msg.get('content', '')}\n"
+
             prompt = f"""
             Phân tích câu hỏi về bệnh cây trồng và trả về thông tin có cấu trúc:
-            Câu hỏi: {query}
+            Câu hỏi hiện tại: {query}
             Ngữ cảnh: {context}
+            {history_text}
 
             Hãy trả về:
             1. Mục đích chính của câu hỏi (nhận dạng bệnh, tư vấn điều trị, phòng ngừa, v.v.)
@@ -188,6 +198,8 @@ class UserInformationCollector(BaseAgent):
             3. Triệu chứng bệnh được mô tả (nếu có)
             4. Thông tin quan trọng cần thu thập thêm
             5. Loại tư vấn phù hợp (chẩn đoán, điều trị, phòng ngừa)
+
+            LƯU Ý: Nếu có lịch sử cuộc trò chuyện, hãy sử dụng thông tin từ đó để hiểu context. Ví dụ: nếu người dùng hỏi "bệnh đó nên dùng thuốc nào", hãy tham khảo bệnh đã được chẩn đoán trong lịch sử trước đó.
             """
 
             # Sử dụng HuggingFace Inference API nếu có

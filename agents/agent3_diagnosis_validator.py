@@ -1,7 +1,3 @@
-"""
-Agent 3: Thẩm định Chẩn đoán & Xác định Tác nhân gây bệnh
-"""
-
 from typing import Any, Dict, Optional
 
 import config
@@ -9,21 +5,15 @@ from agents.base_agent import BaseAgent
 
 
 class DiagnosisValidatorAgent(BaseAgent):
-    """Agent thẩm định chẩn đoán và xác định tác nhân gây bệnh"""
-
     def __init__(self):
         super().__init__("agent3", config.AGENT_CONFIG["agent3"])
 
     async def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Thẩm định chẩn đoán từ Agent 2 và xác định tác nhân gây bệnh
-        """
         agent2_result = input_data.get("agent2_output", {})
         user_query = input_data.get("user_query", "")
         context = input_data.get("context", {})
 
         # Lấy thông tin chẩn đoán từ Agent 2
-        # Lưu ý: agent2_result đã là output trực tiếp từ orchestrator (không cần .get("output", {}))
         diagnosis = agent2_result.get("diagnosis", "")
         confidence = agent2_result.get("confidence", 0.0)
         disease_name = agent2_result.get("disease_name", "")
